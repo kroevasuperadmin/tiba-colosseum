@@ -120,7 +120,8 @@ Useful checks:
 
 ## Team
 
-Tiba: Faris Irfan, Arthur Wong, and Ada Kole.
+Built by Tiba — Faris Irfan, Arthur Wong, and Ada Kole.
+Source: https://github.com/Tiba-Rail/tiba · Live: https://tiba-omega.vercel.app
 # Tiba Status
 
 Status: testnet MVP. Tiba runs as a Next.js app with Prisma/PostgreSQL, GonkaRouter policy checks, and Sui testnet settlement. It is not mainnet, not KYC, and not real USDC. Settlement uses SUI as the USDC stand-in for now: 1 micro == 1 MIST until testnet USDC lands.
