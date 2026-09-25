@@ -93,7 +93,9 @@ function shieldedZatoshis(balanceText) {
 }
 
 function zatoshisField(text, name) {
-  const match = text.match(new RegExp(`${name}:\\s*([^\\n]+)`));
+  // Anchor at the start of the line. `unconfirmed_orchard_balance` contains
+  // `confirmed_orchard_balance`, and a substring match treats a mempool note as spendable.
+  const match = text.match(new RegExp(`(?:^|\\n)\\s*${name}:\\s*([^\\n]+)`));
   if (!match) return 0n;
   const raw = match[1].trim().replaceAll("_", "").replaceAll(",", "");
   if (!/^\d+$/.test(raw)) return 0n;
@@ -173,7 +175,7 @@ async function main() {
 
   console.log("first sync (birthday is chain tip minus 100 blocks)");
   const firstSync = await syncBalance(PAYER_DIR);
-  state.firstSyncMs = firstSync.ms;
+  if (state.firstSyncMs == null) state.firstSyncMs = firstSync.ms;
   await saveState(state);
   console.log(`first sync took ${Math.round(firstSync.ms / 1000)}s`);
   console.log(firstSync.text.trim());
@@ -210,11 +212,26 @@ async function main() {
 
   if (!state.txid) {
     console.log(`quicksend ${SEND_ZATOSHIS} zat with memo ${JSON.stringify(MEMO)}`);
-    const sent = await runZingo(
-      PAYER_DIR,
-      ["--waitsync", "quicksend", recipient.address, SEND_ZATOSHIS.toString(), MEMO],
-      { timeoutMs: 20 * 60 * 1000 }
-    );
+    const deadline = Date.now() + 25 * 60 * 1000;
+    let sent;
+    for (;;) {
+      try {
+        sent = await runZingo(
+          PAYER_DIR,
+          ["--waitsync", "quicksend", recipient.address, SEND_ZATOSHIS.toString(), MEMO],
+          { timeoutMs: 20 * 60 * 1000 }
+        );
+        break;
+      } catch (error) {
+        const message = String(error);
+        if (message.includes("Insufficient balance") && Date.now() < deadline) {
+          console.log("note is in the wallet but not spendable yet; waiting for confirmations");
+          await new Promise((resolve) => setTimeout(resolve, 45_000));
+          continue;
+        }
+        throw error;
+      }
+    }
     const report = parseJson(sent.stdout);
     const txid = report.txids?.[0];
     if (typeof txid !== "string" || !/^[0-9a-f]{64}$/i.test(txid)) {
@@ -225,7 +242,7 @@ async function main() {
     state.workOrderId = WORK_ORDER_ID;
     state.amountZatoshis = SEND_ZATOSHIS.toString();
     state.sentAt = new Date().toISOString();
-    state.explorerUrl = `https://testnet.zcashexplorer.app/transactions/${txid}`;
+    state.explorerUrl = `https://testnet.cipherscan.app/tx/${txid}`;
     await saveState(state);
     console.log(`txid ${txid}`);
   } else {
@@ -266,8 +283,11 @@ async function main() {
     "## Faucet",
     "",
     `Listed at ${FAUCET_DOC} (the testnet faucets on the ZecHub wiki; the developers index does not name a URL).`,
-    "Used: https://fauzec.com — `POST /api/v1/claim` with `{ network: \"testnet\", address }` to the payer unified address.",
-    `Claim record: \`${JSON.stringify(state.faucet ?? { note: "payer was already funded" })}\``,
+    "Tried first: https://fauzec.com — POST /api/v1/claim. That claim stayed pending and did not fund the wallet.",
+    `Fauzec record: \`${JSON.stringify(state.faucet ?? { note: "not claimed" })}\``,
+    state.jinoFaucet
+      ? `Funded by https://zcashfaucet.jinolabs.xyz (same ZecHub faucet page; the proof-of-work was solved from this machine). Drip txid \`${state.jinoFaucet.txid}\`. Explorer: ${state.jinoFaucet.explorerUrl}`
+      : "No second faucet record was stored.",
     "",
     "## Setup",
     "",

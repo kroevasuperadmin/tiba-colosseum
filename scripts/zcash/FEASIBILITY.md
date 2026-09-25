@@ -66,7 +66,7 @@ The Node scripts look for the binary in `ZINGO_CLI`, then `~/zingolib/target/rel
 
 A brand-new wallet created while `--server` is set asks the indexer for the chain tip and sets its birthday to that height minus 100 blocks (`WalletConfig::NewSeed` in zingolib). The first sync then scans about a hundred compact blocks, not the chain from genesis and not from Sapling activation (testnet height 280000).
 
-That should be minutes, not hours. The number goes in `PAYMENT.md` after the run.
+Measured on 25 Sep 2026: the new payer wallet's first sync took 2049 ms. Wallet create, including the chain-tip request, took 90 ms the first time. Details are in `PAYMENT.md`.
 
 The slow path, which this spike does not take: restoring with `--birthday 0`, or creating the wallet offline. Offline, with no birthday override, the library birthday for this tag is testnet height `4134000`. From there to the tip on 25 Sep 2026 is about 257000 blocks. That is a long scan. Stop rather than start it.
 
@@ -77,7 +77,7 @@ The slow path, which this spike does not take: restoring with `--birthday 0`, or
 Source: `https://zechub.wiki/using-zcash/faucets` (ZecHub). Testnet entries listed there:
 
 1. `https://fauzec.com` — HTTP API, shielded to a unified address or a Sapling address, 1 TAZ per address per 24 hours. This is the one the script calls.
-2. `https://zcashfaucet.jinolabs.xyz` — browser proof-of-work. Fallback only, and a script cannot complete that challenge.
+2. `https://zcashfaucet.jinolabs.xyz` — 0.1 TAZ, gated by a hashcash proof of work (`sha256(seed:nonce)` with a set number of leading zero bits). A script can solve that. The live faucet on 25 Sep 2026 had a spendable balance and a synced node.
 
 On 25 Sep 2026, `POST https://fauzec.com/api/v1/claim` with a body that had `network` but no address returned HTTP 400 and `error_code: malformed_request`. The API process is up. A real claim waits until the wallet has a unified address. If that claim errors, or the coins never show up in the wallet, the spike stops and says the faucet failed. It does not fall through to a second send.
 
@@ -93,7 +93,7 @@ Commands the script uses (session flags omitted here; the script always passes `
 
 `send` only stores a proposal. A later process would have to `confirm` it, and the proposal has to still be in the wallet file. `quicksend` keeps propose and broadcast in one process, so that is what the script uses.
 
-Explorer link shape: `https://testnet.zcashexplorer.app/transactions/<txid>`. On 25 Sep 2026 that site’s homepage was still showing early-September blocks while lightwalletd was at height 4391568, so the page can lag. The link is still the public handle for the txid. The memo is not on that page. The viewing key is what makes the memo readable.
+Explorer link shape: `https://testnet.cipherscan.app/tx/<txid>`. On 25 Sep 2026 `testnet.zcashexplorer.app` was still showing early-September blocks and returned 404 for this payment, while lightwalletd was at height 4391568. CipherScan returned the shielded transaction. The memo is not on that page. The viewing key is what makes the memo readable.
 
 ## What the 3 Oct workshop would add
 
@@ -104,3 +104,22 @@ The 3 Oct 2026 workshop (8am PT, FROST wallets and payments) is the threshold-si
 ## If it does not fit
 
 Stop and say which stage died: compile, lightwalletd, first sync, or faucet. Do not invent a transaction id. Do not add `src/lib/rails/zcash.ts` unless the payment and the viewing-key readback both succeeded.
+
+## What happened on 25 Sep 2026
+
+Compile, lightwalletd, and the first sync all worked. The first sync was 2.0 seconds.
+
+`fauzec.com` accepted a claim (`request_id` `01M3BY8D1BKZJFJZ99ZVF09ZV4`) and left it `pending` with `submission_ambiguous`. A later status read returned HTTP 503 `runtime_unavailable`. No TAZ from that claim showed up in the wallet.
+
+The other faucet on the same ZecHub page, `zcashfaucet.jinolabs.xyz`, was funded and synced. Its proof of work is hashcash at 20 leading zero bits. Solving that from this machine returned a shielded drip:
+
+- txid `e9522e21b45db94d8a86b6c5840789d2b7683662a3d3c16ecced51019ff61fed`
+- https://testnet.cipherscan.app/tx/e9522e21b45db94d8a86b6c5840789d2b7683662a3d3c16ecced51019ff61fed
+- 0.1 TAZ, received in the Ironwood pool
+
+The payer then sent 100000 zatoshis (0.001 TAZ) to a second unified address with memo `Tiba payout WO-ZCASH-SPIKE-1`:
+
+- txid `6a39f0b10b9e91af87b5d5efe5e52eeead388270931aca4e2a52f204f191a0ac`
+- https://testnet.cipherscan.app/tx/6a39f0b10b9e91af87b5d5efe5e52eeead388270931aca4e2a52f204f191a0ac
+
+A view-only wallet opened with the recipient unified full viewing key listed that transfer as `received`, pool `Ironwood`, memo `Tiba payout WO-ZCASH-SPIKE-1`. The seed phrase is not in the repo. `testnet.zcashexplorer.app` returned 404 for this txid (that explorer was behind the chain tip). CipherScan showed it.
