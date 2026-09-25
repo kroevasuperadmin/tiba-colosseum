@@ -3,7 +3,7 @@
 
 ## 0. What changed from the last version
 
-The previous version of this document (1 Sep 2026) described settlement on Sui testnet. That was true of a parallel experiment at the time (real transaction proof in `docs/DECISIONS.md`, digest `Cz2DWU6hQQfRQ1JCCDP3qw27XGD5P2MSEJw5Y6W87wpE`), but the current codebase settles on **Solana devnet** (`src/app/settlement.ts`, `@solana/web3.js`, `api.devnet.solana.com`) — that pivot happened after this doc was last touched and was never written back. This version corrects that, and adds the actual product decision made on 17 Sep 2026 after a night of research: what Tiba is for, in one sentence, and why x402 changes the roadmap.
+Settlement in this document is **Solana devnet** (`src/lib/rails/solana.ts` and `src/app/settlement.ts`, `@solana/web3.js`, `https://api.devnet.solana.com`). This version records that network, and adds the product decision made on 17 Sep 2026: what Tiba is for, in one sentence, and why x402 changes the roadmap.
 
 ## 1. One-paragraph summary
 
