@@ -244,24 +244,31 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-line pt-12">
-          <p className="eyebrow">Why Solana, Tempo and Zcash</p>
+          <p className="eyebrow">Who this is for</p>
+          <p className="lede mt-4 max-w-[60ch]">
+            Communities and grant programs that pay contributors and bounties &mdash; starting
+            with Superteam Malaysia and the KrackedDevs crowd. An agent pays a contributor; Tiba
+            reads the claim against the bounty and the record, pays or refuses, leaves a receipt
+            either way.
+          </p>
+          <p className="eyebrow mt-10">One check, any rail</p>
           <div className="mt-6 grid gap-6 md:grid-cols-3">
             <div>
               <p className="lede">
-                <strong>Solana.</strong> Where Tiba already runs, and where it won Superteam
-                Malaysia&apos;s Solana Lab.
+                <strong>Solana &middot; home rail.</strong> Where Tiba already runs, and where it
+                won Superteam Malaysia&apos;s Solana Lab.
               </p>
             </div>
             <div>
               <p className="lede">
-                <strong>Tempo.</strong> A payments chain built by Stripe and Paradigm. Fees are
-                paid in the stablecoin itself &mdash; Tempo has no separate gas token.
+                <strong>Tempo &middot; proof.</strong> Built by Stripe and Paradigm, fees paid in
+                the stablecoin itself. Shows the same check works for contractors and suppliers too.
               </p>
             </div>
             <div>
               <p className="lede">
-                <strong>Zcash.</strong> Payments hidden by default. An auditor gets a viewing key;
-                nobody else sees the amount.
+                <strong>Zcash &middot; proof.</strong> Payments hidden by default, a viewing key
+                for the auditor. Shows the same check works for private payroll and grants too.
               </p>
             </div>
           </div>
