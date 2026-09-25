@@ -14,22 +14,22 @@ const instrumentSerif = Instrument_Serif({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://tiba.rizqey.com"),
-  title: "Tiba — a wallet for AI agents",
+  title: "Tiba — the check before an agent's payment goes out",
   description:
-    "A wallet for AI agents. You give your agent a signed permission slip; it acts and pays only within it; you get a signed receipt for everything it does, that anyone can check.",
+    "The check before an AI agent's payment goes out. It reads the bill against your own record, pays only when they match, and refuses — with a receipt — when they don't.",
   openGraph: {
-    title: "Tiba — a wallet for AI agents",
+    title: "Tiba — the check before an agent's payment goes out",
     description:
-      "A wallet for AI agents. You give your agent a signed permission slip; it acts and pays only within it; you get a signed receipt for everything it does, that anyone can check.",
+      "The check before an AI agent's payment goes out. It reads the bill against your own record, pays only when they match, and refuses — with a receipt — when they don't.",
     url: "https://tiba.rizqey.com",
     siteName: "Tiba",
     type: "website"
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tiba — a wallet for AI agents",
+    title: "Tiba — the check before an agent's payment goes out",
     description:
-      "A wallet for AI agents. You give your agent a signed permission slip; it acts and pays only within it; you get a signed receipt for everything it does, that anyone can check."
+      "The check before an AI agent's payment goes out. It reads the bill against your own record, pays only when they match, and refuses — with a receipt — when they don't."
   }
 };
 

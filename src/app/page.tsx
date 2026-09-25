@@ -7,7 +7,7 @@ import { channelTuple } from "@/lib/adjudication-display";
 import { disagreementLine } from "@/app/console/types";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Tiba — a wallet for AI agents" };
+export const metadata = { title: "Tiba — the check before an agent's payment goes out" };
 
 function requestIdFor(adjudications: Array<{ channel: string; requestId: string | null }>, channel: string): string {
   return adjudications.find((row) => row.channel === channel)?.requestId ?? "missing";
@@ -45,13 +45,13 @@ export default async function Home() {
       <SiteNav current="" />
       <div className="mx-auto flex max-w-5xl flex-col gap-12 px-4 pb-16 pt-16 md:gap-16 md:px-6 md:pt-24 lg:px-8">
         <header>
-          <p className="eyebrow">A wallet for AI agents · test network</p>
+          <p className="eyebrow">The check before a payment goes out · test network</p>
           <h1 className="display-xl mt-4 max-w-[20ch]">
-            A wallet your <RotatingWord words={["AI agents", "software", "apps", "workflows"]} intervalMs={2500} /> can <em>pay people</em> from.
+            The check that runs before your <RotatingWord words={["AI agents", "software", "apps", "workflows"]} intervalMs={2500} /> <em>pay someone</em>.
           </h1>
           <p className="lede mt-6">
-            You give your agent a signed permission slip; it acts and pays only within it; you get a
-            signed receipt for everything it does, that anyone can check.
+            It reads the bill against your own record — the amount, the job, the payee — and pays
+            only when they match. When they don&apos;t, it refuses, and you get a receipt either way.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link className="btn btn-primary" href="/start">
@@ -92,6 +92,10 @@ export default async function Home() {
               <p className="eyebrow mt-2">mean per decision</p>
             </div>
           </div>
+          <p className="lede mt-8 text-sm text-muted">
+            18 funded rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC
+            companies. Zero read the bill before paying. Zero give a receipt for a refusal.
+          </p>
         </section>
 
         <section className="border-t border-line pt-12">
