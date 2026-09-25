@@ -22,7 +22,9 @@ export type PayoutRailErrorCode =
   | "SOLANA_NETWORK_NOT_DEVNET"
   | "SOLANA_PRIVATE_KEY_MISSING"
   | "SOLANA_ADDRESS_MISMATCH"
-  | "SOLANA_EXECUTION_FAILED";
+  | "SOLANA_EXECUTION_FAILED"
+  | "ZCASH_NETWORK_NOT_TESTNET"
+  | "ZCASH_EXECUTION_FAILED";
 
 export class PayoutRailError extends Error {
   readonly code: PayoutRailErrorCode;
@@ -72,7 +74,7 @@ function mockRail(): PayoutRail {
   };
 }
 
-export type RailName = "mock" | "solana" | "legacy";
+export type RailName = "mock" | "solana" | "legacy" | "zcash";
 
 const solanaRailLoader: PayoutRail = {
   async send(request) {
@@ -85,10 +87,22 @@ const solanaRailLoader: PayoutRail = {
   }
 };
 
+const zcashRailLoader: PayoutRail = {
+  async send(request) {
+    const { zcashRail } = await import("./zcash.ts");
+    return zcashRail.send(request);
+  },
+  async batch(requests) {
+    const { zcashRail } = await import("./zcash.ts");
+    return zcashRail.batch(requests);
+  }
+};
+
 export const rails: Record<RailName, PayoutRail> = {
   mock: mockRail(),
   legacy: solanaRailLoader,
-  solana: solanaRailLoader
+  solana: solanaRailLoader,
+  zcash: zcashRailLoader
 };
 
 function isMock(name: string): boolean {
@@ -97,9 +111,11 @@ function isMock(name: string): boolean {
 
 /**
  * Legacy live agents now settle on Solana too. No recipient-specific rail selection remains.
+ * Zcash is selected only when the rail name is "zcash". It does not replace Solana.
  */
 export function payoutRail(name: string, chain?: Chain): PayoutRail {
   if (isMock(name)) return mockRail();
+  if (name === "zcash") return rails.zcash;
   if (name !== "legacy" && name !== "solana") {
     throw new PayoutRailError("UNSUPPORTED_RAIL", `Unsupported rail: ${name}`);
   }
