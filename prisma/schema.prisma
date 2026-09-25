@@ -158,7 +158,7 @@ model PayoutIntent {
   idempotencyKey   String   @unique @map("idempotency_key")
   digest           String?
   explorerUrl      String?  @map("explorer_url")
-  // Chain that settled (or was tried): "solana" | "mock". Old rows keep their stored history.
+  // Chain that settled (or was tried): "solana" | "tempo" | "mock". Old rows keep their stored history.
   chain            String?  @map("chain")
   gnkUsd           String?  @map("gnk_usd")
   pricingUpdatedAt DateTime? @map("pricing_updated_at")

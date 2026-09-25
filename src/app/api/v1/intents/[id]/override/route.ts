@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { getGnkUsdRate } from "@/lib/gonka-pricing";
 import { resolveOperatorAgent } from "@/lib/operator-auth";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
-import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, settledChain } from "@/lib/rails";
+import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
 
 export const runtime = "nodejs";
 
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   if (!target) {
     const updated = await prisma.payoutIntent.update({
       where: { id: intent.id },
-      data: { status: "refused", decisionClass: "RED", reasonCode: "RECIPIENT_NEEDS_SOLANA_ADDRESS", ...pricing }
+      data: { status: "refused", decisionClass: "RED", reasonCode: recipientAddressReason(), ...pricing }
     });
     return NextResponse.json({ id: updated.id, decision_class: updated.decisionClass, reason_code: updated.reasonCode });
   }
