@@ -98,8 +98,10 @@ export function explainDecision(decisionClass: string, reasonCode: string | null
     case "INVALID_AMOUNT": return "The amount in this request was not valid.";
     case "INVALID_TIMESTAMP": return "A date in this request was not valid.";
     case "RECIPIENT_NEEDS_SOLANA_ADDRESS": return "Recipient needs a Solana address.";
+    case "RECIPIENT_NEEDS_TEMPO_ADDRESS": return "Recipient needs a Tempo address.";
     case "SETTLEMENT_FAILED":
     case "SOLANA_EXECUTION_FAILED":
+    case "TEMPO_EXECUTION_FAILED":
       return "Both checks agreed and the limits passed, but the transfer itself failed. No money moved.";
     default:
       return "Refused before any money moved.";
@@ -124,6 +126,7 @@ const PRE_CHECK_REFUSALS = new Set([
   "RECIPIENT_INACTIVE",
   "RECIPIENT_UNVERIFIED",
   "RECIPIENT_NEEDS_SOLANA_ADDRESS",
+  "RECIPIENT_NEEDS_TEMPO_ADDRESS",
   "INVALID_AMOUNT",
   "INVALID_TIMESTAMP"
 ]);
@@ -162,7 +165,7 @@ export function sendResultChecks(decisionClass: string, reasonCode: string | nul
     ];
   }
 
-  if (reasonCode === "SETTLEMENT_FAILED" || reasonCode === "SOLANA_EXECUTION_FAILED") {
+  if (reasonCode === "SETTLEMENT_FAILED" || reasonCode === "SOLANA_EXECUTION_FAILED" || reasonCode === "TEMPO_EXECUTION_FAILED") {
     return [
       { name: CHECK_1, mark: "pass", text: "Agreed." },
       { name: CHECK_2, mark: "pass", text: "Agreed — the transfer itself failed." }
@@ -197,6 +200,7 @@ export function refusalNextStepLink(reasonCode: string | null): { label: string;
     case "RECIPIENT_UNVERIFIED":
       return { label: "Check the recipient", href: "/recipients" };
     case "RECIPIENT_NEEDS_SOLANA_ADDRESS":
+    case "RECIPIENT_NEEDS_TEMPO_ADDRESS":
       return { label: "Add a wallet address", href: "/recipients" };
     case "KILL_SWITCH":
       return { label: "Unfreeze the wallet", href: "/policies" };
@@ -227,10 +231,13 @@ export function refusalNextStep(reasonCode: string | null): string {
       return "What next: check the recipient under Recipients.";
     case "RECIPIENT_NEEDS_SOLANA_ADDRESS":
       return "What next: save a Solana wallet address for this recipient under Recipients.";
+    case "RECIPIENT_NEEDS_TEMPO_ADDRESS":
+      return "What next: save an Ethereum address for this recipient under Recipients.";
     case "KILL_SWITCH":
       return "What next: unfreeze the wallet under Limits.";
     case "SETTLEMENT_FAILED":
     case "SOLANA_EXECUTION_FAILED":
+    case "TEMPO_EXECUTION_FAILED":
       return "What next: try again — the checks passed, the transfer failed.";
     default:
       if (reasonCode?.startsWith("QUORUM_SPLIT")) {
@@ -261,6 +268,7 @@ export function humanError(code: string | null | undefined): { text: string; cod
     RECIPIENT_NOT_FOUND: "That recipient is not saved.",
     RECIPIENT_REF_TAKEN: "Another wallet already uses that short ID. Pick a different one.",
     RECIPIENT_NEEDS_SOLANA_ADDRESS: "Add a Solana wallet address.",
+    RECIPIENT_NEEDS_TEMPO_ADDRESS: "Add a Tempo wallet address.",
     INVALID_SOLANA_ADDRESS: "That is not a valid Solana address.",
     INVALID_PAYER_RECORD_JSON: "Your record is not valid JSON.",
     INVALID_TIMESTAMP: "The date is not valid.",

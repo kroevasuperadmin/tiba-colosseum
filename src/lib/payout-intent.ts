@@ -12,7 +12,7 @@ import {
 } from "@/lib/prompts";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
-import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, settledChain } from "@/lib/rails";
+import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
 import { solanaExplorerTxUrl } from "@/lib/rails/solana";
 import { replenishDemoWorkOrder } from "@/lib/demo-replenish";
 import type { SettlementResponse } from "@/lib/x402/types";
@@ -184,7 +184,7 @@ export async function processPayoutIntent(
     const pricing = await pricingData();
     const denied = await prisma.payoutIntent.update({
       where: { id: intent.id },
-      data: { status: "refused", decisionClass: "RED", reasonCode: "RECIPIENT_NEEDS_SOLANA_ADDRESS", ...pricing }
+      data: { status: "refused", decisionClass: "RED", reasonCode: recipientAddressReason(), ...pricing }
     });
     return toPublicIntent(denied);
   }
