@@ -74,6 +74,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
       "TRANSACTION_CEILING", "WORK_ORDER_CEILING", "WORK_ORDER_EXPIRED",
       "WORK_ORDER_NOT_OPEN", "NO_OPEN_OBLIGATION", "RECIPIENT_INACTIVE",
       "RECIPIENT_NOT_FOUND", "KILL_SWITCH", "RECIPIENT_UNVERIFIED", "RECIPIENT_NEEDS_SOLANA_ADDRESS",
+      "RECIPIENT_NEEDS_TEMPO_ADDRESS",
       "INVALID_AMOUNT", "INVALID_TIMESTAMP"
     ];
 
@@ -108,7 +109,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     if (reasonCode === "SETTLEMENT_PENDING") return "Pending";
     if (
       reasonCode === "SETTLEMENT_FAILED" ||
-      reasonCode === "SOLANA_EXECUTION_FAILED"
+      reasonCode === "SOLANA_EXECUTION_FAILED" ||
+      reasonCode === "TEMPO_EXECUTION_FAILED"
     ) return "Tried and failed";
     return "Not tried";
   }
@@ -126,6 +128,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <h1 className="display-l mt-2">
               {decisionSentence(intent.decisionClass)}
             </h1>
+            {paid ? <p className="mt-2 text-sm text-muted">Paid on {network}.</p> : null}
           </div>
           <div className="card p-4 md:min-w-72">
             <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
