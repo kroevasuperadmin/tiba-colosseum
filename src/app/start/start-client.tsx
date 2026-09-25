@@ -83,7 +83,7 @@ export function StartClient() {
             { name: "list_work_orders", description: "List the invoices awaiting delivery that your software may pay against." },
             { name: "list_recipients", description: "List saved recipients." },
             { name: "get_budget", description: "Read the software's spending limits and current usage." },
-            { name: "submit_payment", description: "Attempt a payment. Two checks must agree on the invoice and amount." },
+            { name: "submit_payment", description: "Attempt a payment. Checked against the invoice and amount: one check under $50, two must agree $50-$250, a person decides above that." },
             { name: "get_last_decision", description: "Get the result of the most recent payment attempt." },
             { name: "list_ledger", description: "Get the payment history." }
           ],
