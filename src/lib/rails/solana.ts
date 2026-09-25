@@ -43,7 +43,8 @@ export function isSolanaAddress(value: string): boolean {
 }
 
 export function solanaExplorerTxUrl(signature: string): string {
-  return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
+  const base = (envValue("SOLANA_EXPLORER_BASE") ?? "https://explorer.solana.com").replace(/\/$/, "");
+  return `${base}/tx/${signature}?cluster=devnet`;
 }
 
 export function solanaPayerKeypair(): Keypair {

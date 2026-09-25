@@ -20,6 +20,7 @@
     "e2e": "node scripts/e2e.mjs",
     "eval": "node scripts/eval.mjs",
     "solana:smoke": "node scripts/solana-smoke.mjs",
+    "tempo:smoke": "node scripts/tempo-smoke.mjs",
     "a2a:proof": "node scripts/a2a-proof.mjs",
     "postinstall": "prisma generate",
     "t3:demo": "node --no-warnings scripts/t3-identity-demo.mjs"
@@ -44,7 +45,8 @@
     "pg": "^8.23.0",
     "qrcode": "1.5.4",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4"
+    "react-dom": "^19.2.4",
+    "viem": "^2.56.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
