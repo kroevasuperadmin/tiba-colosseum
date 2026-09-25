@@ -28,7 +28,9 @@ export type PayoutRailErrorCode =
   | "TEMPO_NETWORK_NOT_MODERATO"
   | "TEMPO_TREASURY_KEY_MISSING"
   | "TEMPO_ADDRESS_MISMATCH"
-  | "TEMPO_EXECUTION_FAILED";
+  | "TEMPO_EXECUTION_FAILED"
+  | "ZCASH_NETWORK_NOT_TESTNET"
+  | "ZCASH_EXECUTION_FAILED";
 
 export class PayoutRailError extends Error {
   readonly code: PayoutRailErrorCode;
@@ -100,7 +102,7 @@ function mockRail(): PayoutRail {
   };
 }
 
-export type RailName = "mock" | "solana" | "legacy";
+export type RailName = "mock" | "solana" | "legacy" | "zcash";
 
 const solanaRailLoader: PayoutRail = {
   async send(request) {
@@ -124,10 +126,22 @@ const tempoRailLoader: PayoutRail = {
   }
 };
 
+const zcashRailLoader: PayoutRail = {
+  async send(request) {
+    const { zcashRail } = await import("./zcash.ts");
+    return zcashRail.send(request);
+  },
+  async batch(requests) {
+    const { zcashRail } = await import("./zcash.ts");
+    return zcashRail.batch(requests);
+  }
+};
+
 export const rails: Record<RailName, PayoutRail> = {
   mock: mockRail(),
   legacy: solanaRailLoader,
-  solana: solanaRailLoader
+  solana: solanaRailLoader,
+  zcash: zcashRailLoader
 };
 
 function isMock(name: string): boolean {
@@ -136,9 +150,11 @@ function isMock(name: string): boolean {
 
 /**
  * Live agents follow RAIL. Mock stays mock, including when RAIL=tempo, so a practice wallet never moves money.
+ * Zcash is selected only when the rail name is "zcash". It does not replace Solana or Tempo.
  */
 export function payoutRail(name: string, chain?: Chain): PayoutRail {
   if (isMock(name)) return mockRail();
+  if (name === "zcash") return rails.zcash;
   const selected = configuredRail();
   if (selected === "tempo" || chain === "tempo") return tempoRailLoader;
   if (name !== "legacy" && name !== "solana") {
