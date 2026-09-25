@@ -13,7 +13,9 @@ agents. Section 4 now states the true rule for how many channels check a payment
 to read as "always two independent checks," which is not accurate at every amount). Section 4 also adds
 Tempo and Zcash, built and tested since v4, which only covered Solana. x402 buyer support carries over from
 v4 but moves from Priority 1 to a later distribution item — it is not what makes Tiba the check, it is one
-more place the check can run.
+more place the check can run. Section 5 was revised again the same day: instead of three rails read as
+three separate buyers, the story leads with one first buyer (bounty and grant payouts in the Superteam
+Malaysia and KrackedDevs crowd) and keeps the three rails as proof the check travels.
 
 ## 1. One-paragraph summary
 
@@ -77,13 +79,20 @@ hope.
    — `PAYOUTS_PROOF.md`). A security review closed 15 Sep, six of six findings fixed
    (`SECURITY_FIXES.md`).
 
-## 5. Who it's for, one line per rail
+## 5. Who it's for
 
-- **Solana** — teams building agents on Solana that pay contributors and bounties, the Superteam crowd,
-  where Tiba already runs and already won.
-- **Tempo** — businesses already in Stripe's world whose agents will pay contractors and suppliers in
-  stablecoins.
-- **Zcash** — anyone paying people who do not want the amounts public: payroll, grants, bounties.
+One buyer, first: communities and grant programs that pay contributors and bounties, starting with
+Superteam Malaysia and the KrackedDevs crowd. An agent pays a contributor; Tiba reads the claim against
+the bounty and the record, pays or refuses, leaves a receipt either way. Solana is the home rail — where
+Tiba already runs and already won.
+
+Tempo and Zcash are proof the same check works on any rail, not two more customer segments: Tempo shows
+it for contractors and suppliers paid in stablecoins; Zcash shows it for private payroll and grants, with
+a viewing key for the auditor.
+
+*Decided 26 Sep: the two winners near this contest (Sky FH at MUBA, Semi at Colosseum) each picked one
+route and one buyer rather than several at once. Tiba's own win was at Superteam Malaysia, whose leaders
+also decide the pending Solana Foundation grant — the same crowd is the natural first buyer.*
 
 ## 6. Competitive landscape — 18 rivals checked, 25 Sep 2026, only what the table supports
 
