@@ -246,10 +246,9 @@ export default async function Home() {
         <section className="border-t border-line pt-12">
           <p className="eyebrow">Who this is for</p>
           <p className="lede mt-4 max-w-[60ch]">
-            Communities and grant programs that pay contributors and bounties &mdash; starting
-            with Superteam Malaysia and the KrackedDevs crowd. An agent pays a contributor; Tiba
-            reads the claim against the bounty and the record, pays or refuses, leaves a receipt
-            either way.
+            Communities and grant programs on Solana that pay contributors and bounties. An agent
+            pays a contributor; Tiba reads the claim against the bounty and the record, pays or
+            refuses, leaves a receipt either way.
           </p>
           <p className="eyebrow mt-10">One check, any rail</p>
           <div className="mt-6 grid gap-6 md:grid-cols-3">
