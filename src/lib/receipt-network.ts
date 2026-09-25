@@ -14,3 +14,10 @@ export function receiptViewingKeyNote(chain: string | null): string | null {
   if (chain === "zcash") return "viewing key available on request";
   return null;
 }
+
+/** The coin actually paid, per chain. Tempo and Zcash test payments are not USDC. */
+export function receiptCoinSymbol(chain: string | null): string {
+  if (chain === "tempo") return "pathUSD";
+  if (chain === "zcash") return "TAZ";
+  return "USDC";
+}

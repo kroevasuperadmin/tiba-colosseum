@@ -8,7 +8,7 @@ import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
-import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { receiptCoinSymbol, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt - Tiba" };
@@ -139,7 +139,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
             <p className="num mt-1 text-2xl">
               {microsToUsdc(intent.amountMicros).replace(/ USDC$/, "")}{" "}
-              <span className="text-sm text-muted">USDC</span>
+              <span className="text-sm text-muted">{receiptCoinSymbol(intent.chain)}</span>
             </p>
           </div>
         </header>
