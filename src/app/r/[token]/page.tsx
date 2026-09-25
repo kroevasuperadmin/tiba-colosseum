@@ -8,7 +8,7 @@ import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
-import { receiptNetwork } from "@/lib/receipt-network";
+import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt - Tiba" };
@@ -110,7 +110,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     if (
       reasonCode === "SETTLEMENT_FAILED" ||
       reasonCode === "SOLANA_EXECUTION_FAILED" ||
-      reasonCode === "TEMPO_EXECUTION_FAILED"
+      reasonCode === "TEMPO_EXECUTION_FAILED" ||
+      reasonCode === "ZCASH_EXECUTION_FAILED"
     ) return "Tried and failed";
     return "Not tried";
   }
@@ -124,7 +125,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
       <div className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-8 md:px-6 lg:px-8">
         <header className="flex flex-col gap-4 border-b border-line pb-6 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="eyebrow">Receipt — anyone with this link can read it</p>
+            <p className="eyebrow">
+              {intent.chain === "zcash"
+                ? "Receipt — anyone with the viewing key can check the payment"
+                : "Receipt — anyone with this link can read it"}
+            </p>
             <h1 className="display-l mt-2">
               {decisionSentence(intent.decisionClass)}
             </h1>
@@ -248,6 +253,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
                   ) : (
                     "No transfer happened, so there is no transaction record."
                   )}
+                  {receiptViewingKeyNote(intent.chain) ? (
+                    <div>{receiptViewingKeyNote(intent.chain)}</div>
+                  ) : null}
                 </td>
               </tr>
               {intent.x402Routed ? (
