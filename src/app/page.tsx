@@ -93,8 +93,9 @@ export default async function Home() {
             </div>
           </div>
           <p className="lede mt-8 text-sm text-muted">
-            18 funded rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC
-            companies. Zero read the bill before paying. Zero give a receipt for a refusal.
+            18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
+            None refuses a wrong bill automatically (one mentions checking invoices, and a person
+            still approves). 0 of 17 give a receipt for a refusal.
           </p>
         </section>
 
@@ -238,6 +239,30 @@ export default async function Home() {
               <Link className="btn btn-ghost mt-3" href="/verify">
                 Verify a receipt →
               </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-line pt-12">
+          <p className="eyebrow">Why Solana, Tempo and Zcash</p>
+          <div className="mt-6 grid gap-6 md:grid-cols-3">
+            <div>
+              <p className="lede">
+                <strong>Solana.</strong> Where Tiba already runs, and where it won Superteam
+                Malaysia&apos;s Solana Lab.
+              </p>
+            </div>
+            <div>
+              <p className="lede">
+                <strong>Tempo.</strong> A payments chain built by Stripe and Paradigm. Fees are
+                paid in the stablecoin itself &mdash; Tempo has no separate gas token.
+              </p>
+            </div>
+            <div>
+              <p className="lede">
+                <strong>Zcash.</strong> Payments hidden by default. An auditor gets a viewing key;
+                nobody else sees the amount.
+              </p>
             </div>
           </div>
         </section>
