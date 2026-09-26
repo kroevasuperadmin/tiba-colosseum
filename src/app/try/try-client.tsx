@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { FoolIt } from "./fool-it";
 
 type Step = 1 | 2 | 3 | 4;
 type ScopeId = "pay-recipient" | "pay-invoice" | "notes-and-pay";
@@ -111,9 +112,11 @@ export function TryClient() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-10 md:px-6 md:py-14 lg:px-8">
+      <FoolIt />
+      <div className="mt-16 border-t border-line pt-14">
       <header className="max-w-xl">
         <p className="eyebrow">Practice · no wallet needed</p>
-        <h1 className="display-l mt-2">Authorize a demo payout.</h1>
+        <h2 className="display-l mt-2">Authorize a demo payout.</h2>
         <p className="mt-4 max-w-[58ch] text-sm leading-6 text-muted md:text-base">
           Pick a scope, a budget, and an expiry. Tiba shows the receipt your agent would leave. Nothing is signed and no money moves.
         </p>
@@ -239,6 +242,7 @@ export function TryClient() {
           ) : null}
         </section>
       )}
+      </div>
     </div>
   );
 }
