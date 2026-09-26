@@ -3,7 +3,7 @@ import type { Agent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getGnkUsdRate } from "@/lib/gonka-pricing";
 import { CANDIDATES, runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
-import { modelAnsweredWith, sameMakerHold } from "@/lib/channel-makers";
+import { modelAnsweredWith, sameMakerFallback } from "@/lib/channel-makers";
 import { recipientIdentityOk } from "@/lib/identity";
 import {
   artifactDecisionSchema,
@@ -225,6 +225,23 @@ export async function processPayoutIntent(
   const artifactResult = artifactRun.status === "fulfilled" ? artifactRun.value : unavailable("moonshotai/Kimi-K2.6");
   const payerResult = payerRun.status === "fulfilled" ? payerRun.value : unavailable("deepseek-ai/DeepSeek-V4-Flash-0731");
 
+  const payerTuple = tuple(payerResult);
+  const artifactTuple = tuple(artifactResult);
+  const channelPolicyWorkOrder = payerTuple
+    ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
+    : null;
+  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  // A fallback that left both checks on one maker is recorded. It does not change pay or refuse.
+  const sameMaker = sameMakerFallback({
+    requiredChannels,
+    artifactModel: artifactResult.model,
+    payerModel: payerResult.model,
+    artifactAnswered: artifactTuple !== null,
+    payerAnswered: payerTuple !== null,
+    artifactPrimary: CANDIDATES.artifact[0],
+    payerPrimary: CANDIDATES.payer_record[0]
+  });
+
   await prisma.adjudication.createMany({
     data: [
       {
@@ -239,7 +256,8 @@ export async function processPayoutIntent(
         outputTokens: artifactResult.outputTokens,
         latencyMs: artifactResult.latencyMs,
         tupleJson: tupleJson(artifactResult),
-        ok: artifactResult.ok
+        ok: artifactResult.ok,
+        sameMaker
       },
       {
         intentId: intent.id,
@@ -253,46 +271,16 @@ export async function processPayoutIntent(
         outputTokens: payerResult.outputTokens,
         latencyMs: payerResult.latencyMs,
         tupleJson: tupleJson(payerResult),
-        ok: payerResult.ok
+        ok: payerResult.ok,
+        sameMaker
       }
     ]
   });
 
-  const payerTuple = tuple(payerResult);
-  const artifactTuple = tuple(artifactResult);
-  const channelPolicyWorkOrder = payerTuple
-    ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
-    : null;
-  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
   const reconciled = reconcile(requiredChannels, {
     artifact: artifactTuple ?? undefined,
     payer_record: payerTuple ?? undefined
   });
-
-  // Both checks were required, and a fallback left them answered by the same maker.
-  // They were not independent this time: do not pay. A person decides.
-  const makerHold = sameMakerHold({
-    requiredChannels,
-    artifactModel: artifactResult.model,
-    payerModel: payerResult.model,
-    artifactAnswered: artifactTuple !== null,
-    payerAnswered: payerTuple !== null,
-    artifactPrimary: CANDIDATES.artifact[0],
-    payerPrimary: CANDIDATES.payer_record[0]
-  });
-  if (makerHold.hold) {
-    const pricing = await pricingData();
-    const updated = await prisma.payoutIntent.update({
-      where: { id: intent.id },
-      data: {
-        status: makerHold.status,
-        decisionClass: makerHold.decisionClass,
-        reasonCode: makerHold.reasonCode,
-        ...pricing
-      }
-    });
-    return toPublicIntent(updated);
-  }
 
   // A disagreement is only the payer's fault if both channels ran the models we asked for.
   // When the router substituted a model, a split cannot be attributed to the evidence, so the

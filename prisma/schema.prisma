@@ -192,6 +192,9 @@ model Adjudication {
   latencyMs    Int      @map("latency_ms")
   tupleJson    Json?    @map("tuple_json")
   ok           Boolean
+  // True when both checks had to run and a fallback left them answered by the same maker.
+  // The payment still pays or refuses on its own. The receipt says so.
+  sameMaker    Boolean  @default(false) @map("same_maker")
   createdAt    DateTime @default(now()) @map("created_at")
 
   intent       PayoutIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
