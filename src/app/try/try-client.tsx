@@ -311,9 +311,9 @@ function DemoReceipt({
       </article>
 
       <div className="mt-8 border-t border-line pt-8">
-        <h2 className="display-m">Do this for real.</h2>
+        <h2 className="display-m">Now try it on the test network.</h2>
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted">
-          That was a practice run. Connect a wallet to authorize a live payout from your own Tiba wallet, with a signed permission and a checkable receipt.
+          That was a practice run. Connect a wallet to authorize a test payout from your own Tiba wallet on Solana's test network, with a signed permission and a checkable receipt. No real money moves.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link className="btn btn-primary" href="/signin?callbackUrl=/start">
