@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Agent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getGnkUsdRate } from "@/lib/gonka-pricing";
-import { runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
+import { CANDIDATES, runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
+import { modelAnsweredWith, sameMakerHold } from "@/lib/channel-makers";
 import { recipientIdentityOk } from "@/lib/identity";
 import {
   artifactDecisionSchema,
@@ -229,7 +230,7 @@ export async function processPayoutIntent(
       {
         intentId: intent.id,
         channel: "artifact",
-        model: artifactResult.model,
+        model: modelAnsweredWith(artifactResult),
         requestId: artifactResult.requestId,
         fallback: artifactResult.fallback,
         promptSha: fingerprintPrompt(artifactMessages),
@@ -243,7 +244,7 @@ export async function processPayoutIntent(
       {
         intentId: intent.id,
         channel: "payer_record",
-        model: payerResult.model,
+        model: modelAnsweredWith(payerResult),
         requestId: payerResult.requestId,
         fallback: payerResult.fallback,
         promptSha: fingerprintPrompt(payerMessages),
@@ -267,6 +268,31 @@ export async function processPayoutIntent(
     artifact: artifactTuple ?? undefined,
     payer_record: payerTuple ?? undefined
   });
+
+  // Both checks were required, and a fallback left them answered by the same maker.
+  // They were not independent this time: do not pay. A person decides.
+  const makerHold = sameMakerHold({
+    requiredChannels,
+    artifactModel: artifactResult.model,
+    payerModel: payerResult.model,
+    artifactAnswered: artifactTuple !== null,
+    payerAnswered: payerTuple !== null,
+    artifactPrimary: CANDIDATES.artifact[0],
+    payerPrimary: CANDIDATES.payer_record[0]
+  });
+  if (makerHold.hold) {
+    const pricing = await pricingData();
+    const updated = await prisma.payoutIntent.update({
+      where: { id: intent.id },
+      data: {
+        status: makerHold.status,
+        decisionClass: makerHold.decisionClass,
+        reasonCode: makerHold.reasonCode,
+        ...pricing
+      }
+    });
+    return toPublicIntent(updated);
+  }
 
   // A disagreement is only the payer's fault if both channels ran the models we asked for.
   // When the router substituted a model, a split cannot be attributed to the evidence, so the
