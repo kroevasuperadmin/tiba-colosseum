@@ -261,13 +261,15 @@ export default async function Home() {
             <div>
               <p className="lede">
                 <strong>Tempo &middot; proof.</strong> Built by Stripe and Paradigm, fees paid in
-                the stablecoin itself. Shows the same check works for contractors and suppliers too.
+                the stablecoin itself. Built and tested, not live &mdash; for contractors and
+                suppliers too.
               </p>
             </div>
             <div>
               <p className="lede">
                 <strong>Zcash &middot; proof.</strong> Payments hidden by default, a viewing key
-                for the auditor. Shows the same check works for private payroll and grants too.
+                for the auditor. Built and tested, not live &mdash; for private payroll and
+                grants too.
               </p>
             </div>
           </div>
