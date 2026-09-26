@@ -75,6 +75,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
   if (!intent) notFound();
 
+  const bountyClaim = await prisma.bountyClaim.findUnique({
+    where: { payoutIntentId: intent.id },
+    include: { bounty: true }
+  });
+
   const adjudicationsByChannel = new Map(intent.adjudications.map((row) => [row.channel, row]));
   const paid = intent.decisionClass === "PAID";
 
@@ -197,6 +202,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
         {refusedComparison ? <BillRecordMismatch comparison={refusedComparison} /> : null}
 
         <DenialBanner decisionClass={intent.decisionClass} reasonCode={intent.reasonCode} />
+
+        {bountyClaim ? (
+          <section className="card p-5">
+            <p className="title text-muted">Bounty</p>
+            <p className="mt-2 text-xl font-semibold">{bountyClaim.bounty.title}</p>
+            <p className="mt-1 text-sm text-muted">
+              Asked: <span className="num">{microsToUsdc(bountyClaim.amountAskedMicros)}</span>
+            </p>
+            <p className="mt-1 text-sm text-muted">Claimed: {bountyClaim.summary}</p>
+          </section>
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-3">
           <Fact
