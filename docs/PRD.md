@@ -25,6 +25,10 @@ they match. When they don't, it refuses, and the refusal still gets a signed pub
 trying to out-build Coinbase, Stripe or Squads on spending limits — every rival checked already has those.
 It is the refusal step nobody else runs.
 
+Once agents pay bills, the bill itself becomes the attack. The check that reads the payer's record is
+never shown the bill (`src/lib/prompts.ts:35`), and the amount paid always comes from the record, so a fake
+or padded bill can't raise it. Disagreement between the two readings is the alarm.
+
 ## 2. The problem, in plain words
 
 Every AI agent that can research, draft and decide still stops at one spot: the moment money has to move,
@@ -36,6 +40,8 @@ hope.
 
 ## 3. Why now, sourced
 
+- AI can now turn a messy bill into exact fields, and agents are starting to pay without a person clicking
+  approve.
 - Agent payment rails arrived this year. Coinbase ships Agentic Wallets (Feb 2026, limits by token, time
   and amount). Stripe ships one-time payment tokens with an amount cap and an expiry, live in the US,
   Canada and Europe. On Solana, Squads Grid ships spending-limited smart accounts with timelocks and
@@ -66,21 +72,25 @@ hope.
    had to run and a fallback left both answered by the same maker, the payment still pays or refuses on
    its own. That fact is stored on the adjudication, and the receipt says both checks used the same model
    because the other was unavailable.
-3. How many channels run depends on the amount (`src/lib/reconcile.ts`, `requiredChannelsForAmount`,
-   covered by its own test):
-   - Under $50: one channel, the payer's own record. A same-maker fallback does not change this, and the
-     receipt does not add the same-model note.
-   - $50 to $250: both channels must agree.
-   - Over $250: neither channel runs automatically — a person decides.
+3. Both readings always run (`src/lib/payout-intent.ts`, `Promise.allSettled`). Each invoice (work order)
+   carries its own setting:
+   - `both`: the default (`prisma/schema.prisma:135`); job and amount must match.
+   - `payer_record`: the amount comes from the record; the bill must still name the same job
+     (`src/lib/reconcile.ts:31-37`).
+   - `human`: a person decides.
+
+   The amount bands in `requiredChannelsForAmount` (under $50 / $50-250 / over $250) are used only by the
+   Telegram agent today (`src/lib/telegram-agent.ts:220`); making them a floor for every invoice is an open
+   board job.
 4. Agreement pays. Disagreement, or a policy limit (kill switch, per-payment ceiling, daily cap, recipient
    allowlist), refuses. No tie-breaker, no guess. A same-maker fallback does not change that.
 5. Every outcome, paid or refused, gets a public signed receipt (`/r/[token]`) naming which channels ran,
    what each one found, and which rule decided it. A channel that did not run says so, not "agreed."
-6. Live rail: Solana devnet, USDC. Built and tested, not yet merged or live: Tempo (an EVM-compatible
-   stablecoin chain, fees paid in the stablecoin itself — no separate gas token) and Zcash (shielded
-   payments; an auditor gets a viewing key, nobody else sees the amount). Combined on branch
-   `colosseum-all` / `v4-the-check`, 71 of 71 tests pass.
-7. Five real test payouts exist on Solana devnet (13 Sep 2026, 0.01 USDC each, each with a public receipt
+6. Live rail: Solana devnet, USDC. Built and tested; deployed on the live site but switched off (no treasury
+   keys set): Tempo (an EVM-compatible stablecoin chain, fees paid in the stablecoin itself — no separate
+   gas token) and Zcash (shielded payments; an auditor gets a viewing key, nobody else sees the amount).
+   Combined on branch `colosseum-all` / `v4-the-check`, 71 of 71 tests pass.
+7. Five test payouts exist on Solana devnet (13 Sep 2026, 0.01 USDC each, each with a public receipt
    — `PAYOUTS_PROOF.md`). A security review closed 15 Sep, six of six findings fixed
    (`SECURITY_FIXES.md`).
 
@@ -122,25 +132,26 @@ None of the 18 checked refuses a wrong bill on its own and proves it happened. T
    existing signed receipt. Never edit a signed receipt.
 3. Tempo and Zcash rails live, not just built and tested. Built and tested on `colosseum-all` /
    `v4-the-check`; going live is a separate decision this document does not make.
-4. Three outside teams running real payouts through Tiba, each with a public receipt and a refusal.
+4. Three outside teams running test payouts through Tiba, each with a public receipt and a refusal.
 5. x402 buyer support stays on the roadmap as later distribution — once Tiba can pay any x402-speaking
    endpoint, that is one more place its checks run — but it does not come before items 1 to 4.
 
 ## 8. Success test by 12 October
 
-Three outside teams run real payouts through Tiba, each with a public receipt, and each with at least one
+Three outside teams run test payouts through Tiba, each with a public receipt, and each with at least one
 refusal. Nothing else counts as proof.
 
 ## 9. Open questions
 
 1. **Pricing.** Free on test networks, then a monthly plan plus a small fee per checked payment — the same
    shape as Locus (start at $0, pay per call), which the market already accepts. No number is set.
-2. **Market size**, sourced: $3-5 trillion of buying is projected to run through AI agents by 2030
-   (McKinsey, Oct 2025; US retail alone up to $1 trillion). $303 billion sits in stablecoins today, heading
-   to roughly $420 billion by year end (Stablecoin Beat, 10 Sep 2026; year-end figure via Citi/Spark). If
-   1% of agent spending ran through a check like Tiba at 0.1% per payment, that is $30-50 million a year —
-   our own what-if math, shown as a what-if, not a forecast. Re-verify both external figures before citing
-   them publicly; they were checked 25 September and may have moved.
+2. **Market size**, sourced: $3-5 trillion is all buying run by AI agents by 2030, mostly shopping
+   (McKinsey, Oct 2025; US retail alone up to $1 trillion); paying people is one slice. $303 billion sits
+   in stablecoins today, heading to roughly $420 billion by year end (Stablecoin Beat, 10 Sep 2026;
+   year-end figure via Citi/Spark). If 1% of agent spending ran through a check like Tiba at 0.1% per
+   payment, that is $30-50 million a year — our own what-if math, shown as a what-if, not a forecast.
+   Re-verify both external figures before citing them publicly; they were checked 25 September and may
+   have moved.
 3. Custody and regulatory structure before any production-network money — unresolved, carried over from
    v4.
 4. Which identity/compliance provider, and for which jurisdictions — unresolved, carried over from v4 (the

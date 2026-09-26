@@ -47,12 +47,20 @@ export default async function Home() {
             It reads the bill against your own record — the amount, the job, the payee — and pays
             only when they match. When they don&apos;t, it refuses, and you get a receipt either way.
           </p>
+          <p className="lede mt-4">
+            Once agents pay bills, the bill itself becomes the attack. The check that reads your
+            record is never shown the bill, and the amount paid always comes from your record, so a
+            fake or padded bill can&apos;t raise it.
+          </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link className="btn btn-primary" href="/start">
-              Create your wallet
+            <Link className="btn btn-primary" href={refusedIntent ? `/r/${refusedIntent.publicToken}` : "/try"}>
+              See it refuse a bad bill
             </Link>
             <Link className="btn btn-secondary" href="/try">
               Try it
+            </Link>
+            <Link className="btn btn-secondary" href="/start">
+              Create your wallet
             </Link>
             <Link className="btn btn-ghost" href="/signin">
               Sign in
@@ -65,6 +73,55 @@ export default async function Home() {
             </Link>
           </div>
         </header>
+
+        <section className="border-t border-line pt-12">
+          <p className="eyebrow">A real example</p>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {refusedCard ? (
+              <div className="card p-5">
+                <span className="pill pill-refused">Refused</span>
+                <BillRecordMismatch comparison={refusedCard.comparison} compact />
+                <Link className="btn btn-ghost mt-3" href={refusedCard.href}>
+                  Open receipt →
+                </Link>
+              </div>
+            ) : null}
+            {paidIntent ? (
+              <div className="card p-5">
+                <span className="pill pill-paid">Paid</span>
+                <p className="mt-3 text-sm">
+                  <span className="num">{microsToUsdc(paidIntent.amountMicros)}</span> sent to a
+                  separate recipient wallet on the test network. No real money moved.
+                </p>
+                <p className="eyebrow mt-4">Transaction</p>
+                {paidIntent.explorerUrl ? (
+                  <a className="link mt-1 inline-block text-sm" href={paidIntent.explorerUrl}>
+                    View on test network
+                  </a>
+                ) : (
+                  <p className="num mt-1 break-all text-xs text-muted">{paidIntent.digest ?? "missing"}</p>
+                )}
+                <p className="eyebrow mt-4">Check references</p>
+                <p className="num mt-1 break-all text-xs text-muted">
+                  A: {requestIdFor(paidIntent.adjudications, "artifact")} · B:{" "}
+                  {requestIdFor(paidIntent.adjudications, "payer_record")}
+                </p>
+                <div>
+                  <Link className="btn btn-ghost mt-3" href={`/r/${paidIntent.publicToken}`}>
+                    Open receipt →
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="card p-5">
+                <span className="pill pill-paid">Paid</span>
+                <p className="mt-3 text-sm text-muted">
+                  No paid example yet. Send a payment from Send.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
 
         <section className="border-t border-line pt-12">
           <p className="eyebrow">Eval of an earlier build, 29 Aug 2026, on a mock settlement rail. Not live figures.</p>
@@ -121,36 +178,28 @@ export default async function Home() {
             <li>
               <p className="num text-sm text-muted">01</p>
               <p className="lede mt-3">
-                Write what your agent may do in the language you already use.
+                You keep a record of what you owe: the job, the amount, the payee.
               </p>
             </li>
             <li>
               <p className="num text-sm text-muted">02</p>
               <p className="lede mt-3">
-                Review the scope, budget, and expiry. You choose whether to sign.
+                When a bill comes in, Tiba reads it and checks it against your record before anything
+                is signed.
               </p>
             </li>
             <li>
               <p className="num text-sm text-muted">03</p>
               <p className="lede mt-3">
-                The agent stays inside that permission and leaves a signed receipt behind.
+                If it names a different job or payee, it refuses. Otherwise it pays the amount your
+                record approved, never the bill&apos;s. You get a receipt either way.
               </p>
             </li>
           </ol>
           <div className="mt-10 space-y-4">
             <p className="lede">
-              A permission slip says exactly what is allowed, how much may be spent, and when it stops.
-            </p>
-            <p className="lede">
-              Revoke it when the task changes. New actions stop at the boundary you set.
-            </p>
-            <p className="lede">
-              Every outcome is a receipt that can be checked independently, without trusting a dashboard.
-            </p>
-            <p className="lede">The wallet stays: agents still pay from it within the limits you set.</p>
-            <p className="lede">
-              Around it sit limits you set and your software can only read: a per-payment
-              ceiling, hourly and daily spending limits, a list of saved recipients, and a freeze.
+              Around the check: a signed permission slip, spending limits and a freeze that your agent
+              can read but not change.
             </p>
             <p className="lede">
               Most agent-payment plumbing, including x402 — the protocol AWS, Cloudflare, Circle,
@@ -158,55 +207,6 @@ export default async function Home() {
               supposed to decide whether a payment may go out at all. That check is what Tiba
               runs, before any signature.
             </p>
-          </div>
-        </section>
-
-        <section className="border-t border-line pt-12">
-          <p className="eyebrow">A real example</p>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {refusedCard ? (
-              <div className="card p-5">
-                <span className="pill pill-refused">Refused</span>
-                <BillRecordMismatch comparison={refusedCard.comparison} compact />
-                <Link className="btn btn-ghost mt-3" href={refusedCard.href}>
-                  Open receipt →
-                </Link>
-              </div>
-            ) : null}
-            {paidIntent ? (
-              <div className="card p-5">
-                <span className="pill pill-paid">Paid</span>
-                <p className="mt-3 text-sm">
-                  <span className="num">{microsToUsdc(paidIntent.amountMicros)}</span> sent to a
-                  separate recipient wallet on the test network. No real money moved.
-                </p>
-                <p className="eyebrow mt-4">Transaction</p>
-                {paidIntent.explorerUrl ? (
-                  <a className="link mt-1 inline-block text-sm" href={paidIntent.explorerUrl}>
-                    View on test network
-                  </a>
-                ) : (
-                  <p className="num mt-1 break-all text-xs text-muted">{paidIntent.digest ?? "missing"}</p>
-                )}
-                <p className="eyebrow mt-4">Check references</p>
-                <p className="num mt-1 break-all text-xs text-muted">
-                  A: {requestIdFor(paidIntent.adjudications, "artifact")} · B:{" "}
-                  {requestIdFor(paidIntent.adjudications, "payer_record")}
-                </p>
-                <div>
-                  <Link className="btn btn-ghost mt-3" href={`/r/${paidIntent.publicToken}`}>
-                    Open receipt →
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <div className="card p-5">
-                <span className="pill pill-paid">Paid</span>
-                <p className="mt-3 text-sm text-muted">
-                  No paid example yet. Send a payment from Send.
-                </p>
-              </div>
-            )}
           </div>
         </section>
 
