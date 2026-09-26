@@ -169,7 +169,7 @@ export const ships: Ship[] = [
   },
   {
     date: "2026-09-06",
-    line: "Sign in with Google or GitHub. Wallets you create stay on that account.",
+    line: "Sign-in can use Google or GitHub when the site has them turned on. Wallets you create stay on that account.",
     href: "/signin",
     link: "Sign in"
   },
