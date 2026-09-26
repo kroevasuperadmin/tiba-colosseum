@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { signupRefFrom } from "../src/lib/signup-ref.ts";
 
-const TOKEN = "550e8400-e29b-41d4-a716-446655440000";
+// Not a secret: the nil UUID, an obviously-fake placeholder (all zeros), not a real receipt
+// token. A prior value here (RFC 4122's own example UUID) tripped GitGuardian's high-entropy
+// secret scanner as a false positive -- this file never held credentials, only a shape check.
+const TOKEN = "00000000-0000-0000-0000-000000000000";
 
 test("ref captured on signup", () => {
   assert.equal(signupRefFrom(TOKEN), TOKEN, "a receipt token is kept");
