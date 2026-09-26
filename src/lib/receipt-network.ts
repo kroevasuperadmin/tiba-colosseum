@@ -1,11 +1,15 @@
-// Payout records pre-dating the Solana rail either explicitly say "sui" or have
-// no chain value. This is receipt display only: neither value can reach a rail.
+// Payout records pre-dating the Solana rail explicitly say "sui" -- that is a real
+// legacy signal. A null chain means no settlement was attempted at all (an early
+// refusal, gate refusal, or sandbox try): it never touched any chain, Sui included.
+// This is receipt display only: none of these values can reach a rail.
 export function receiptNetwork(chain: string | null): string {
   if (chain === "solana") return "Solana devnet";
   if (chain === "tempo") return "Tempo testnet";
   if (chain === "zcash") return "Zcash testnet";
   if (chain === "mock") return "Simulated, no transfer";
-  if (chain === "sui" || chain === null) return "Sui testnet";
+  if (chain === "sandbox") return "Sandbox try, nothing sent";
+  if (chain === "sui") return "Sui testnet";
+  if (chain === null) return "No transfer attempted";
   return "Test network";
 }
 
