@@ -25,14 +25,14 @@ export async function SignedInNotice() {
   return (
     <div className="mx-auto max-w-2xl px-4 pt-8 md:px-6 lg:px-8">
       <div className="rounded-md border border-line bg-surface px-4 py-4">
-        <p className="text-sm font-medium">Want to come back to this wallet later?</p>
+        <p className="text-sm font-medium">Sign in to pay on Solana's test network.</p>
         <p className="mt-1 text-sm text-muted">
-          Sign in first with your wallet, Google or GitHub, and it stays on your account.
+          Without sign-in, payments are simulated and nothing moves on chain. Signed-in wallets are limited per account and per day.
         </p>
         <Link className="btn btn-primary mt-3" href="/signin?callbackUrl=/start">
           Sign in first
         </Link>
-        <p className="mt-3 text-sm text-muted">Or just create one below and keep the two keys.</p>
+        <p className="mt-3 text-sm text-muted">Or create one below without signing in and keep the two keys.</p>
       </div>
     </div>
   );
