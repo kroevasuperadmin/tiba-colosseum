@@ -36,6 +36,8 @@ model Agent {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
   userId            String?  @map("user_id")
+  // Public receipt token from /start?ref=, when this workspace was created from a receipt. Null otherwise.
+  signupRef         String?  @map("signup_ref")
 
   intents           PayoutIntent[]
   recipients        Recipient[]
