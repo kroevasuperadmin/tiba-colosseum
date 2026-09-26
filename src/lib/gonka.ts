@@ -15,9 +15,12 @@ const TIMEOUT_MS = 60_000;
 // Keeping the hedge-both-candidates pattern even though Groq is far more
 // reliable than Gonka was - cheap insurance, and it costs nothing extra since
 // Groq's free tier is uncapped for this account.
-const CANDIDATES: Record<GonkaChannel, [string, string]> = {
+// Each channel has its own primary maker. The second id is the fallback, used
+// only when the primary does not return schema-valid JSON. Artifact asks
+// OpenAI first; the payer's record asks Alibaba first.
+export const CANDIDATES: Record<GonkaChannel, [string, string]> = {
   artifact: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"],
-  payer_record: ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+  payer_record: ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
 };
 const PRIMARY: Record<GonkaChannel, string> = { artifact: CANDIDATES.artifact[0], payer_record: CANDIDATES.payer_record[0] };
 const SCHEMA_FREE = new Set<string>();
@@ -178,11 +181,13 @@ export interface GonkaRequest {
 }
 
 /**
- * Hedged dispatch. Both candidate models for the channel are fired at once and
- * the first schema-valid result wins; the other call is left to finish (it only
- * updates `health`). If neither validates, one repair prompt is sent to the
- * primary; if that fails too, the channel is unavailable / schema-invalid and
- * the caller treats it as AMBER. 400/401 are never retried.
+ * Both candidate models for the channel are fired at once. The primary is kept
+ * whenever it returns schema-valid JSON, even if the fallback answered first,
+ * so the channel stays with its own maker. The fallback is the answer only when
+ * the primary does not validate. If neither validates, one repair prompt is
+ * sent to the primary. Per-call retry and schema checks are unchanged. 400/401
+ * are never retried. The call that does not win is left to finish (it only
+ * updates `health`).
  */
 export async function runGonka(request: GonkaRequest): Promise<GonkaResult> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -203,7 +208,13 @@ export async function runGonka(request: GonkaRequest): Promise<GonkaResult> {
       }, () => { if (--pending === 0) resolve(null); });
     }
   });
-  if (firstValid?.result?.ok) return firstValid.result;
+  if (firstValid?.result?.ok) {
+    if (firstValid.model !== primary) {
+      const preferred = await attempts[0];
+      if (preferred.result?.ok) return preferred.result;
+    }
+    return firstValid.result;
+  }
 
   const settled = await Promise.all(attempts.map((a) => a.catch(() => null)));
   const hardStop = settled.find((r) => r && (r.status === 400 || r.status === 401));
