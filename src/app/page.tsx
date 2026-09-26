@@ -3,8 +3,8 @@ import { RotatingWord } from "@/components/rotating-word";
 import { SiteNav } from "@/components/site-nav";
 import { prisma } from "@/lib/db";
 import { microsToUsdc } from "@/lib/money";
-import { channelTuple } from "@/lib/adjudication-display";
-import { disagreementLine } from "@/app/console/types";
+import { BillRecordMismatch } from "@/components/bill-record-mismatch";
+import { homepageRefusedCard } from "@/lib/receipt-comparison";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tiba — the check before an agent's payment goes out" };
@@ -32,13 +32,7 @@ export default async function Home() {
     })
   ]);
 
-  const refusedDisagreement = refusedIntent
-    ? disagreementLine(
-        refusedIntent.reasonCode,
-        channelTuple(refusedIntent.adjudications.find((row) => row.channel === "artifact")?.tupleJson),
-        channelTuple(refusedIntent.adjudications.find((row) => row.channel === "payer_record")?.tupleJson)
-      )
-    : null;
+  const refusedCard = homepageRefusedCard(refusedIntent);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -170,14 +164,11 @@ export default async function Home() {
         <section className="border-t border-line pt-12">
           <p className="eyebrow">A real example</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {refusedIntent ? (
+            {refusedCard ? (
               <div className="card p-5">
                 <span className="pill pill-refused">Refused</span>
-                <p className="mt-3 text-sm">
-                  {refusedDisagreement ??
-                    "The two checks gave different answers, so Tiba refused."}
-                </p>
-                <Link className="btn btn-ghost mt-3" href={`/r/${refusedIntent.publicToken}`}>
+                <BillRecordMismatch comparison={refusedCard.comparison} compact />
+                <Link className="btn btn-ghost mt-3" href={refusedCard.href}>
                   Open receipt →
                 </Link>
               </div>

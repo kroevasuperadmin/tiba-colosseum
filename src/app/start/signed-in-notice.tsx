@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 
 // Signing in first is what lets someone come back to this wallet later. Offered
 // above the form, never required: the keys-only path below still works.
-export async function SignedInNotice() {
+export async function SignedInNotice({ signupRef = null }: { signupRef?: string | null }) {
   let user = null;
   try {
     user = (await auth())?.user ?? null;
@@ -29,7 +29,10 @@ export async function SignedInNotice() {
         <p className="mt-1 text-sm text-muted">
           Sign in first with your wallet, Google or GitHub, and it stays on your account.
         </p>
-        <Link className="btn btn-primary mt-3" href="/signin?callbackUrl=/start">
+        <Link
+          className="btn btn-primary mt-3"
+          href={`/signin?callbackUrl=${encodeURIComponent(signupRef ? `/start?ref=${signupRef}` : "/start")}`}
+        >
           Sign in first
         </Link>
         <p className="mt-3 text-sm text-muted">Or just create one below and keep the two keys.</p>
