@@ -13,7 +13,7 @@ import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
-import { SANDBOX_AGENT_ID } from "@/lib/fool-it-sample";
+import { limitsStatus } from "@/lib/receipt-status";
 
 export const dynamic = "force-dynamic";
 
@@ -58,11 +58,6 @@ function formatTime(date: Date | null): string {
   }).format(date);
 }
 
-function remainingBudget(dayCapMicros: bigint, spentMicrosDay: bigint): string {
-  const remaining = dayCapMicros > spentMicrosDay ? dayCapMicros - spentMicrosDay : 0n;
-  return microsToUsdc(remaining);
-}
-
 export default async function ReceiptPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const intent = await prisma.payoutIntent.findUnique({
@@ -83,10 +78,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
   const adjudicationsByChannel = new Map(intent.adjudications.map((row) => [row.channel, row]));
   const paid = intent.decisionClass === "PAID";
-  // The sandbox workspace's caps are all zero by design (nowhere for a live payout path to
-  // send money) -- "Left to spend today" would always read 0.00 USDC, which means nothing for
-  // a receipt that never could have paid.
-  const isSandbox = intent.agentId === SANDBOX_AGENT_ID;
 
   // Get channel tuples for disagreement line. A model can return a tuple with a blank
   // work_order_id -- a real read that just didn't find a number, not the same as no read at
@@ -128,21 +119,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     if (!tupleA || !tupleB) return "Not run";
     if (tupleA.workOrderId === tupleB.workOrderId && tupleA.amount === tupleB.amount) return "Yes";
     return "No";
-  }
-
-  // Determine policy status
-  function getPolicyStatus(reasonCode: string | null): string {
-    const policyRefusalCodes = [
-      "DAY_AMOUNT_CAP", "DAY_COUNT_CAP", "HOUR_AMOUNT_CAP", "HOUR_COUNT_CAP",
-      "TRANSACTION_CEILING", "WORK_ORDER_CEILING", "WORK_ORDER_EXPIRED",
-      "WORK_ORDER_NOT_OPEN", "NO_OPEN_OBLIGATION", "RECIPIENT_INACTIVE",
-      "RECIPIENT_NOT_FOUND", "KILL_SWITCH", "RECIPIENT_UNVERIFIED", "RECIPIENT_NEEDS_SOLANA_ADDRESS",
-      "RECIPIENT_NEEDS_TEMPO_ADDRESS",
-      "INVALID_AMOUNT", "INVALID_TIMESTAMP"
-    ];
-
-    if (policyRefusalCodes.includes(reasonCode || "")) return "Blocked";
-    return "Passed";
   }
 
   // Identity gate is per agent (default off) and sits before inference. No per-intent
@@ -187,6 +163,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     payerModel: payerRow?.ok ? payerRow.model : null
   });
   const sameModelNote = receiptSameModelNote(Boolean(artifactRow?.sameMaker || payerRow?.sameMaker));
+  const limits = limitsStatus(intent.decisionClass, intent.reasonCode);
+
+  // A refusal before the limits never stores the amount (it stays 0), so show what the
+  // bill asked for when Check 1 read it, instead of a false 0.00.
+  const unreadAmount = !paid && intent.amountMicros === 0n;
+  const amountLabel = paid ? "Amount" : unreadAmount ? (channelATuple ? "Bill asked for" : "Amount") : "Amount asked for";
+  const amountValue = unreadAmount
+    ? (channelATuple ? channelATuple.amount.replace(/ USDC$/, "") : "Not read")
+    : microsToUsdc(intent.amountMicros).replace(/ USDC$/, "");
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -206,10 +191,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             {paid ? <p className="mt-2 text-sm text-muted">Paid on {network}.</p> : null}
           </div>
           <div className="card p-4 md:min-w-72">
-            <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
+            <p className="text-sm text-muted">{amountLabel}</p>
             <p className="num mt-1 text-2xl">
-              {microsToUsdc(intent.amountMicros).replace(/ USDC$/, "")}{" "}
-              <span className="text-sm text-muted">USDC</span>
+              {amountValue}
+              {amountValue !== "Not read" ? (
+                <>
+                  {" "}
+                  <span className="text-sm text-muted">USDC</span>
+                </>
+              ) : null}
             </p>
           </div>
         </header>
@@ -229,7 +219,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           </section>
         ) : null}
 
-        <section className={`grid gap-4 ${isSandbox ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+        <section className="grid gap-4 md:grid-cols-2">
           <Fact
             label={paid ? "Paid to" : "To"}
             value={intent.recipient.displayName}
@@ -239,13 +229,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             label="Why"
             value={explainDecision(intent.decisionClass, intent.reasonCode)}
           />
-          {isSandbox ? null : (
-            <Fact
-              label="Left to spend today (live)"
-              value={remainingBudget(intent.agent.dayCapMicros, intent.agent.spentMicrosDay)}
-              detail="right now, not at the time of this receipt"
-            />
-          )}
         </section>
 
         <section className="card p-5">
@@ -321,8 +304,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Your limits</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode)}</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode) === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
+                <td className="py-3 px-3">{limits}</td>
+                <td className="py-3 px-3">{limits === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Identity check</td>
