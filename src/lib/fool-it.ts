@@ -257,7 +257,7 @@ export function refusalRecord(draft: RefusalDraft, publicToken: string, idempote
       publicToken,
       digest: null,
       explorerUrl: null,
-      chain: null,
+      chain: "sandbox",
       x402Routed: false
     },
     artifact: {

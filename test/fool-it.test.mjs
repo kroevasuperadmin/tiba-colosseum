@@ -112,7 +112,7 @@ test("mismatch -> refused receipt", async () => {
   assert.equal(row.intent.reasonCode, "QUORUM_SPLIT:work_order_id");
   assert.equal(row.intent.digest, null);
   assert.equal(row.intent.explorerUrl, null);
-  assert.equal(row.intent.chain, null);
+  assert.equal(row.intent.chain, "sandbox");
   assert.equal(row.intent.x402Routed, false);
   assert.equal(row.intent.amountMicros, 9_000_000n);
   assert.equal(row.artifact.rawText, draft.billText);
