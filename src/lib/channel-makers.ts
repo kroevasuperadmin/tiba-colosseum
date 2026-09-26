@@ -3,13 +3,10 @@
  * Test networks only. These helpers never move money.
  */
 
-export const SAME_MAKER_REASON = "SAME_MAKER";
+export const SAME_MODEL_NOTE =
+  "This time both checks used the same model because the other was unavailable.";
 
 export type RequiredChannelBand = "payer_record" | "both" | "human";
-
-export type SameMakerHold =
-  | { hold: false }
-  | { hold: true; status: "held"; decisionClass: "AMBER"; reasonCode: typeof SAME_MAKER_REASON };
 
 /** The model id on the channel result is the one that answered. Adjudications store this. */
 export function modelAnsweredWith(result: { model: string }): string {
@@ -30,11 +27,11 @@ function makerPhrase(model: string | null | undefined): string | null {
 }
 
 /**
- * In the two-check band, a fallback that leaves both answers from the same maker
- * means the checks were not independent. Hold for a person. Under $50 only the
- * payer's record is required; that band is left alone.
+ * True when both checks had to run and a fallback left them answered by the same
+ * maker. The payment still pays or refuses on its own. Under $50 only the payer's
+ * record is required, so this note is not stored there.
  */
-export function sameMakerHold(input: {
+export function sameMakerFallback(input: {
   requiredChannels: RequiredChannelBand;
   artifactModel: string | null | undefined;
   payerModel: string | null | undefined;
@@ -42,15 +39,19 @@ export function sameMakerHold(input: {
   payerAnswered: boolean;
   artifactPrimary: string;
   payerPrimary: string;
-}): SameMakerHold {
-  if (input.requiredChannels !== "both") return { hold: false };
-  if (!input.artifactAnswered || !input.payerAnswered) return { hold: false };
-  if (!input.artifactModel || !input.payerModel) return { hold: false };
-  if (makerKey(input.artifactModel) !== makerKey(input.payerModel)) return { hold: false };
+}): boolean {
+  if (input.requiredChannels !== "both") return false;
+  if (!input.artifactAnswered || !input.payerAnswered) return false;
+  if (!input.artifactModel || !input.payerModel) return false;
+  if (makerKey(input.artifactModel) !== makerKey(input.payerModel)) return false;
   const fellBack =
     input.artifactModel !== input.artifactPrimary || input.payerModel !== input.payerPrimary;
-  if (!fellBack) return { hold: false };
-  return { hold: true, status: "held", decisionClass: "AMBER", reasonCode: SAME_MAKER_REASON };
+  return fellBack;
+}
+
+/** The receipt sentence for a same-maker fallback. Empty when that did not happen. */
+export function receiptSameModelNote(sameMaker: boolean): string | null {
+  return sameMaker ? SAME_MODEL_NOTE : null;
 }
 
 /** Plain sentences for the receipt. Empty when neither channel has a known maker. */

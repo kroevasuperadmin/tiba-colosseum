@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CANDIDATES, runGonka } from "../src/lib/gonka.ts";
-import { requiredChannelsForAmount } from "../src/lib/reconcile.ts";
+import { reconcile, requiredChannelsForAmount } from "../src/lib/reconcile.ts";
 import {
   modelAnsweredWith,
   receiptMakerSentences,
-  sameMakerHold
+  receiptSameModelNote,
+  sameMakerFallback
 } from "../src/lib/channel-makers.ts";
-import { explainDecision } from "../src/app/console/types.ts";
 
 const OPENAI = "openai/gpt-oss-120b";
 const ALIBABA = "qwen/qwen3.8-27b";
@@ -55,13 +55,13 @@ test("the adjudication stores the model that answered", () => {
   assert.notEqual(modelAnsweredWith({ model: ALIBABA }), CANDIDATES.artifact[0]);
 });
 
-test("same-maker fallback in the two-check band holds for a person", () => {
+test("same-maker fallback in the two-check band is recorded and does not hold the payment", () => {
   const band = requiredChannelsForAmount(100_000_000n);
   assert.equal(band, "both");
   assert.equal(requiredChannelsForAmount(50_000_000n), "both");
   assert.equal(requiredChannelsForAmount(250_000_000n), "both");
 
-  const bothAlibaba = sameMakerHold({
+  const bothAlibaba = sameMakerFallback({
     requiredChannels: band,
     artifactModel: CANDIDATES.artifact[1],
     payerModel: CANDIDATES.payer_record[0],
@@ -70,14 +70,9 @@ test("same-maker fallback in the two-check band holds for a person", () => {
     artifactPrimary: CANDIDATES.artifact[0],
     payerPrimary: CANDIDATES.payer_record[0]
   });
-  assert.deepEqual(bothAlibaba, {
-    hold: true,
-    status: "held",
-    decisionClass: "AMBER",
-    reasonCode: "SAME_MAKER"
-  });
+  assert.equal(bothAlibaba, true);
 
-  const bothOpenAI = sameMakerHold({
+  const bothOpenAI = sameMakerFallback({
     requiredChannels: requiredChannelsForAmount(50_000_000n),
     artifactModel: CANDIDATES.artifact[0],
     payerModel: CANDIDATES.payer_record[1],
@@ -86,20 +81,28 @@ test("same-maker fallback in the two-check band holds for a person", () => {
     artifactPrimary: CANDIDATES.artifact[0],
     payerPrimary: CANDIDATES.payer_record[0]
   });
-  assert.equal(bothOpenAI.hold, true);
-  assert.equal(bothOpenAI.reasonCode, "SAME_MAKER");
+  assert.equal(bothOpenAI, true);
 
-  const why = explainDecision("AMBER", "SAME_MAKER");
+  const matched = { workOrderId: "WO-3", amountMicros: 100_000_000n, deliveryTimestamp: "2026-08-29T00:00:00Z" };
+  assert.deepEqual(reconcile("both", { artifact: matched, payer_record: matched }), { ok: true, tuple: matched });
+  const split = reconcile("both", {
+    artifact: { workOrderId: "WO-7", amountMicros: 100_000_000n, deliveryTimestamp: "2026-08-29T00:00:00Z" },
+    payer_record: matched
+  });
+  assert.equal(split.ok, false);
+  assert.equal(split.reasonCode, "QUORUM_SPLIT:work_order_id");
+
   assert.equal(
-    why,
-    "Both checks were read by the same company's model, so this time they were not independent. A person has to decide."
+    receiptSameModelNote(true),
+    "This time both checks used the same model because the other was unavailable."
   );
+  assert.equal(receiptSameModelNote(false), null);
 });
 
-test("under $50 a same-maker fallback does not hold", () => {
+test("under $50 a same-maker fallback is not recorded", () => {
   const band = requiredChannelsForAmount(49_999_999n);
   assert.equal(band, "payer_record");
-  const decision = sameMakerHold({
+  assert.equal(sameMakerFallback({
     requiredChannels: band,
     artifactModel: ALIBABA,
     payerModel: ALIBABA,
@@ -107,12 +110,11 @@ test("under $50 a same-maker fallback does not hold", () => {
     payerAnswered: true,
     artifactPrimary: CANDIDATES.artifact[0],
     payerPrimary: CANDIDATES.payer_record[0]
-  });
-  assert.deepEqual(decision, { hold: false });
+  }), false);
 });
 
-test("different makers in the two-check band are not held", () => {
-  const primaries = sameMakerHold({
+test("different makers in the two-check band are not recorded as the same model", () => {
+  assert.equal(sameMakerFallback({
     requiredChannels: "both",
     artifactModel: OPENAI,
     payerModel: ALIBABA,
@@ -120,10 +122,9 @@ test("different makers in the two-check band are not held", () => {
     payerAnswered: true,
     artifactPrimary: OPENAI,
     payerPrimary: ALIBABA
-  });
-  assert.equal(primaries.hold, false);
+  }), false);
 
-  const swapped = sameMakerHold({
+  assert.equal(sameMakerFallback({
     requiredChannels: "both",
     artifactModel: ALIBABA,
     payerModel: OPENAI,
@@ -131,10 +132,9 @@ test("different makers in the two-check band are not held", () => {
     payerAnswered: true,
     artifactPrimary: OPENAI,
     payerPrimary: ALIBABA
-  });
-  assert.equal(swapped.hold, false);
+  }), false);
 
-  assert.equal(sameMakerHold({
+  assert.equal(sameMakerFallback({
     requiredChannels: "human",
     artifactModel: ALIBABA,
     payerModel: ALIBABA,
@@ -142,7 +142,7 @@ test("different makers in the two-check band are not held", () => {
     payerAnswered: true,
     artifactPrimary: OPENAI,
     payerPrimary: ALIBABA
-  }).hold, false);
+  }), false);
 });
 
 test("receipts show the makers", () => {

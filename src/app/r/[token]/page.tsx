@@ -9,7 +9,7 @@ import { decisionSentence, disagreementLine, explainDecision } from "@/app/conso
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
-import { receiptMakerSentences } from "@/lib/channel-makers";
+import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt - Tiba" };
@@ -124,6 +124,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     artifactModel: artifactRow?.ok ? artifactRow.model : null,
     payerModel: payerRow?.ok ? payerRow.model : null
   });
+  const sameModelNote = receiptSameModelNote(Boolean(artifactRow?.sameMaker || payerRow?.sameMaker));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -173,6 +174,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
         <section className="card p-5">
           <h2 className="title">How this decision was made</h2>
           {makerSentences ? <p className="mt-4 text-sm">{makerSentences}</p> : null}
+          {sameModelNote ? <p className="mt-2 text-sm">{sameModelNote}</p> : null}
           <div className="mt-4 max-w-full overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
@@ -237,14 +239,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Did both checks agree?</td>
-                <td className="py-3 px-3">
-                  {intent.reasonCode === "SAME_MAKER" ? "Not counted" : getAgreementStatus(channelATuple, channelBTuple)}
-                </td>
-                <td className="py-3 px-3">
-                  {intent.reasonCode === "SAME_MAKER"
-                    ? explainDecision(intent.decisionClass, intent.reasonCode)
-                    : disagreement || "—"}
-                </td>
+                <td className="py-3 px-3">{getAgreementStatus(channelATuple, channelBTuple)}</td>
+                <td className="py-3 px-3">{disagreement || "—"}</td>
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Your limits</td>
