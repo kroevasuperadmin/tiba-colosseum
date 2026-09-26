@@ -99,6 +99,8 @@ export function explainDecision(decisionClass: string, reasonCode: string | null
     case "INVALID_TIMESTAMP": return "A date in this request was not valid.";
     case "RECIPIENT_NEEDS_SOLANA_ADDRESS": return "Recipient needs a Solana address.";
     case "RECIPIENT_NEEDS_TEMPO_ADDRESS": return "Recipient needs a Tempo address.";
+    case "CLAIM_OVER_BOUNTY": return "The amount asked is more than this bounty pays.";
+    case "CLAIMER_NOT_ALLOWED": return "This address is not on the bounty's allowed list.";
     case "SETTLEMENT_FAILED":
     case "SOLANA_EXECUTION_FAILED":
     case "TEMPO_EXECUTION_FAILED":
