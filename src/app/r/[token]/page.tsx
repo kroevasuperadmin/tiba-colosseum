@@ -11,7 +11,7 @@ import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
-import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { coinSymbol, microsToCoin, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 import { SANDBOX_AGENT_ID } from "@/lib/fool-it-sample";
 
@@ -27,7 +27,7 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
 
   const share = receiptShareLines({
     decisionClass: intent.decisionClass,
-    amount: microsToUsdc(intent.amountMicros),
+    amount: microsToCoin(intent.amountMicros, intent.chain),
     comparison: receiptComparisonFromStored({
       artifact: intent.adjudications.find((row) => row.channel === "artifact") ?? null,
       payerRecord: intent.adjudications.find((row) => row.channel === "payer_record") ?? null
@@ -35,8 +35,8 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   });
   const title = `${share.outcome} · ${share.amount}`;
   const description = share.mismatch
-    ? `Solana test network. Mismatch: ${share.mismatch}.`
-    : "Solana test network.";
+    ? `${receiptNetwork(intent.chain)}. Mismatch: ${share.mismatch}.`
+    : `${receiptNetwork(intent.chain)}.`;
 
   return {
     title: "Receipt - Tiba",
@@ -209,7 +209,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
             <p className="num mt-1 text-2xl">
               {microsToUsdc(intent.amountMicros).replace(/ USDC$/, "")}{" "}
-              <span className="text-sm text-muted">USDC</span>
+              <span className="text-sm text-muted">{coinSymbol(intent.chain)}</span>
             </p>
           </div>
         </header>
@@ -223,7 +223,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <p className="title text-muted">Bounty</p>
             <p className="mt-2 text-xl font-semibold">{bountyClaim.bounty.title}</p>
             <p className="mt-1 text-sm text-muted">
-              Asked: <span className="num">{microsToUsdc(bountyClaim.amountAskedMicros)}</span>
+              Asked: <span className="num">{microsToCoin(bountyClaim.amountAskedMicros, intent.chain)}</span>
             </p>
             <p className="mt-1 text-sm text-muted">Claimed: {bountyClaim.summary}</p>
           </section>
