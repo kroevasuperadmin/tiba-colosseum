@@ -1,5 +1,6 @@
 import { SiteNav } from "@/components/site-nav";
 import { SpecRenderer } from "@/components/spec-renderer";
+import { Quickstart } from "./quickstart";
 import { TIBA_STANDARD_SPEC } from "@/lib/tiba-standard/spec-content";
 import mandateSchema from "@/lib/tiba-standard/schemas/tiba-mandate-v0.1.schema.json";
 import receiptSchema from "@/lib/tiba-standard/schemas/tiba-receipt-v0.1.schema.json";
@@ -33,6 +34,8 @@ export default function DevelopersPage() {
             Tiba adds a signed permission slip before an agent acts and a signed receipt after it does. It works beside the protocols that already carry the action.
           </p>
         </header>
+
+        <Quickstart />
 
         <section className="mt-12 border-t border-line pt-8" aria-labelledby="fits-title">
           <p className="eyebrow">Where it fits</p>
