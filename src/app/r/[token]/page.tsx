@@ -9,6 +9,7 @@ import { decisionSentence, disagreementLine, explainDecision } from "@/app/conso
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { limitsStatus } from "@/lib/receipt-status";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt - Tiba" };
@@ -67,21 +68,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     return "No";
   }
 
-  // Determine policy status
-  function getPolicyStatus(reasonCode: string | null): string {
-    const policyRefusalCodes = [
-      "DAY_AMOUNT_CAP", "DAY_COUNT_CAP", "HOUR_AMOUNT_CAP", "HOUR_COUNT_CAP",
-      "TRANSACTION_CEILING", "WORK_ORDER_CEILING", "WORK_ORDER_EXPIRED",
-      "WORK_ORDER_NOT_OPEN", "NO_OPEN_OBLIGATION", "RECIPIENT_INACTIVE",
-      "RECIPIENT_NOT_FOUND", "KILL_SWITCH", "RECIPIENT_UNVERIFIED", "RECIPIENT_NEEDS_SOLANA_ADDRESS",
-      "RECIPIENT_NEEDS_TEMPO_ADDRESS",
-      "INVALID_AMOUNT", "INVALID_TIMESTAMP"
-    ];
-
-    if (policyRefusalCodes.includes(reasonCode || "")) return "Blocked";
-    return "Passed";
-  }
-
   // Identity gate is per agent (default off) and sits before inference. No per-intent
   // snapshot is stored, so "Passed" is derived from the recipient's stored verdict at the
   // intent's creation time, never from the flag alone. An intent refused before the gate
@@ -117,6 +103,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   }
 
   const network = receiptNetwork(intent.chain);
+  const limits = limitsStatus(intent.decisionClass, intent.reasonCode);
+
+  // A refusal before the limits never stores the amount (it stays 0), so show what the
+  // bill asked for when Check 1 read it, instead of a false 0.00.
+  const unreadAmount = !paid && intent.amountMicros === 0n;
+  const amountLabel = paid ? "Amount" : unreadAmount ? (channelATuple ? "Bill asked for" : "Amount") : "Amount asked for";
+  const amountValue = unreadAmount
+    ? (channelATuple ? channelATuple.amount.replace(/ USDC$/, "") : "Not read")
+    : microsToUsdc(intent.amountMicros).replace(/ USDC$/, "");
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -136,10 +131,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             {paid ? <p className="mt-2 text-sm text-muted">Paid on {network}.</p> : null}
           </div>
           <div className="card p-4 md:min-w-72">
-            <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
+            <p className="text-sm text-muted">{amountLabel}</p>
             <p className="num mt-1 text-2xl">
-              {microsToUsdc(intent.amountMicros).replace(/ USDC$/, "")}{" "}
-              <span className="text-sm text-muted">USDC</span>
+              {amountValue}
+              {amountValue !== "Not read" ? (
+                <>
+                  {" "}
+                  <span className="text-sm text-muted">USDC</span>
+                </>
+              ) : null}
             </p>
           </div>
         </header>
@@ -234,8 +234,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Your limits</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode)}</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode) === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
+                <td className="py-3 px-3">{limits}</td>
+                <td className="py-3 px-3">{limits === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Identity check</td>
