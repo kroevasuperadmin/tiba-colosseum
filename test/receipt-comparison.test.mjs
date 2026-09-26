@@ -85,6 +85,25 @@ test("homepage shows nothing when no refusal exists", () => {
   assert.equal(card.comparison.fields[0].record, "WO-RECORD");
 });
 
+test("a tuple with a blank work order is named, not shown as nothing", () => {
+  const blankBill = {
+    tupleJson: {
+      work_order_id: "",
+      amount_micros: "9000000",
+      delivery_timestamp: "2026-09-01T00:00:00.000Z"
+    }
+  };
+  const view = receiptComparisonFromStored({ artifact: blankBill, payerRecord: record });
+
+  // The channel view itself: the receipt's "Bill" panel would otherwise show an empty line.
+  assert.equal(view.bill.note, null, "the channel ran and returned a tuple -- it is not the 'did not run' case");
+  assert.equal(view.bill.workOrderId, "not found on the bill");
+
+  // The side-by-side mismatch table: same gap, same fix.
+  const workOrderField = view.fields.find((field) => field.label === "Work order");
+  assert.deepEqual(workOrderField, { label: "Work order", bill: "not found on the bill", record: "WO-RECORD" });
+});
+
 test("every receipt links onward with its own token", () => {
   assert.equal(
     GROWTH_LINE,
