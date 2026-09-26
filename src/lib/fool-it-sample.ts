@@ -18,7 +18,11 @@ export const SANDBOX_PAYER_RECORD = {
   note: "Sandbox record for the try-to-fool check. Test network only."
 };
 
-/** The bill text both the visitor and the artifact check see. */
+/** The bill text both the visitor and the artifact check see. The work order number is stated
+ *  on its own labelled line, not folded into a sentence: a live run on 26 Sep found the reading
+ *  model sometimes missed an edited work order number when it sat mid-sentence, leaving the
+ *  receipt showing a blank invoice. Repeating the label ("Work order:") in front of it, on its
+ *  own line, is the more extraction-friendly shape. */
 export function sandboxBillText(workOrderId: string, amountUsdc: string): string {
-  return `Delivery note. Work order ${workOrderId}. Amount due ${amountUsdc} USDC. The work is delivered.`;
+  return `Delivery note.\nWork order: ${workOrderId}\nAmount due: ${amountUsdc} USDC\nStatus: delivered`;
 }

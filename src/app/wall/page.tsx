@@ -38,7 +38,11 @@ export default async function WallPage() {
           <Total value={String(wall.checksRun)} label="checks run" />
           <Total value={String(wall.paid)} label="paid" />
           <Total value={String(wall.refused)} label="refused" />
-          <Total value={wall.refusedAmount} label="refused, test money" />
+          <Total
+            value={wall.refusedAmount ?? "refusals so far asked for nothing"}
+            label="refused, test money"
+            caption={wall.refused > 0 ? `${wall.refusedWithAmount} of ${wall.refused} asked for money` : undefined}
+          />
         </section>
 
         <section aria-label="Public receipts">
@@ -61,11 +65,15 @@ export default async function WallPage() {
   );
 }
 
-function Total({ value, label }: { value: string; label: string }) {
+function Total({ value, label, caption }: { value: string; label: string; caption?: string }) {
+  // The dollar figures use the big numeric display style; a sentence (no refusal has asked for
+  // money yet) reads oddly at that size and isn't a number, so it drops to plain text.
+  const isAmount = /^[\d.,]/.test(value);
   return (
     <div>
-      <p className="num display-m">{value}</p>
+      <p className={isAmount ? "num display-m" : "title"}>{value}</p>
       <p className="eyebrow mt-2">{label}</p>
+      {caption ? <p className="mt-1 text-xs text-muted">{caption}</p> : null}
     </div>
   );
 }

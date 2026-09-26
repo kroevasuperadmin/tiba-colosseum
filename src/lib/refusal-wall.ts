@@ -27,7 +27,13 @@ export type RefusalWall = {
   checksRun: number;
   paid: number;
   refused: number;
-  refusedAmount: string;
+  /** Of `refused`, how many named a real (nonzero) amount asked for -- older refusals from
+   *  before an amount was ever attached, and many gate refusals (no open invoice, wrong
+   *  recipient), never had one. */
+  refusedWithAmount: number;
+  /** Sum over refusedWithAmount only. Null when refusedWithAmount is 0: there is nothing to
+   *  add up, and "0.00 USDC" would misreport that as a real total instead of "no data yet". */
+  refusedAmount: string | null;
   rows: WallRow[];
 };
 
@@ -219,14 +225,16 @@ export function buildRefusalWall(records: readonly unknown[]): RefusalWall {
     .filter((row): row is Prepared => row !== null)
     .sort((a, b) => b.at - a.at || b.href.localeCompare(a.href));
 
-  const refusedMicros = prepared.reduce((sum, row) => sum + row.refusedMicros, 0n);
+  const withAmount = prepared.filter((row) => row.refusedMicros > 0n);
+  const refusedMicros = withAmount.reduce((sum, row) => sum + row.refusedMicros, 0n);
   const rows: WallRow[] = prepared.map(({ at: _at, refusedMicros: _refused, ...row }) => row);
 
   return {
     checksRun: rows.length,
     paid: rows.filter((row) => row.outcome === "PAID").length,
     refused: rows.filter((row) => row.outcome === "REFUSED").length,
-    refusedAmount: microsToUsdc(refusedMicros),
+    refusedWithAmount: withAmount.length,
+    refusedAmount: withAmount.length > 0 ? microsToUsdc(refusedMicros) : null,
     rows
   };
 }
@@ -237,7 +245,7 @@ export function visibleWallText(wall: RefusalWall): string {
     String(wall.checksRun),
     String(wall.paid),
     String(wall.refused),
-    wall.refusedAmount,
+    wall.refusedAmount ?? "",
     "test money",
     ...wall.rows.flatMap((row) => [
       row.outcomeLabel,

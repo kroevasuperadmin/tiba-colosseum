@@ -13,6 +13,7 @@ import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
+import { SANDBOX_AGENT_ID } from "@/lib/fool-it-sample";
 
 export const dynamic = "force-dynamic";
 
@@ -82,10 +83,24 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
   const adjudicationsByChannel = new Map(intent.adjudications.map((row) => [row.channel, row]));
   const paid = intent.decisionClass === "PAID";
+  // The sandbox workspace's caps are all zero by design (nowhere for a live payout path to
+  // send money) -- "Left to spend today" would always read 0.00 USDC, which means nothing for
+  // a receipt that never could have paid.
+  const isSandbox = intent.agentId === SANDBOX_AGENT_ID;
 
-  // Get channel tuples for disagreement line
-  const channelATuple = channelTuple(adjudicationsByChannel.get("artifact")?.tupleJson);
-  const channelBTuple = channelTuple(adjudicationsByChannel.get("payer_record")?.tupleJson);
+  // Get channel tuples for disagreement line. A model can return a tuple with a blank
+  // work_order_id -- a real read that just didn't find a number, not the same as no read at
+  // all -- so a blank field is named rather than left empty ("saw invoice , 480.00").
+  function withoutBlankFields(tuple: ChannelTuple, side: "bill" | "record"): ChannelTuple {
+    if (!tuple) return tuple;
+    const label = side === "bill" ? "not found on the bill" : "not found on the record";
+    return {
+      workOrderId: tuple.workOrderId.trim() || label,
+      amount: tuple.amount.trim() || label
+    };
+  }
+  const channelATuple = withoutBlankFields(channelTuple(adjudicationsByChannel.get("artifact")?.tupleJson), "bill");
+  const channelBTuple = withoutBlankFields(channelTuple(adjudicationsByChannel.get("payer_record")?.tupleJson), "record");
   const disagreement = disagreementLine(intent.reasonCode, channelATuple, channelBTuple);
   const refusedComparison =
     intent.decisionClass === "RED"
@@ -214,7 +229,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           </section>
         ) : null}
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className={`grid gap-4 ${isSandbox ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
           <Fact
             label={paid ? "Paid to" : "To"}
             value={intent.recipient.displayName}
@@ -224,11 +239,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             label="Why"
             value={explainDecision(intent.decisionClass, intent.reasonCode)}
           />
-          <Fact
-            label="Left to spend today (live)"
-            value={remainingBudget(intent.agent.dayCapMicros, intent.agent.spentMicrosDay)}
-            detail="right now, not at the time of this receipt"
-          />
+          {isSandbox ? null : (
+            <Fact
+              label="Left to spend today (live)"
+              value={remainingBudget(intent.agent.dayCapMicros, intent.agent.spentMicrosDay)}
+              detail="right now, not at the time of this receipt"
+            />
+          )}
         </section>
 
         <section className="card p-5">

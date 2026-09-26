@@ -234,6 +234,30 @@ test("the wall page and its query do not name private workspace fields", () => {
   }
 });
 
+test("when every refusal asked for zero, the total is null, not a misleading 0.00", () => {
+  const wall = buildRefusalWall([
+    receipt({ decisionClass: "RED", reasonCode: "NO_OPEN_OBLIGATION", amountMicros: "0", createdAt: "2026-09-26T08:00:00.000Z" }),
+    receipt({ decisionClass: "RED", reasonCode: "RECIPIENT_NOT_FOUND", amountMicros: "0", createdAt: "2026-09-26T08:05:00.000Z" }),
+    receipt({ decisionClass: "PAID", amountMicros: "500000", createdAt: "2026-09-26T08:10:00.000Z" })
+  ]);
+  assert.equal(wall.refused, 2);
+  assert.equal(wall.refusedWithAmount, 0);
+  assert.equal(wall.refusedAmount, null);
+  // The privacy-check text helper still renders without throwing on a null total.
+  assert.doesNotThrow(() => visibleWallText(wall));
+});
+
+test("a mixed set counts and totals only the refusals that actually asked for money", () => {
+  const wall = buildRefusalWall([
+    receipt({ decisionClass: "RED", reasonCode: "NO_OPEN_OBLIGATION", amountMicros: "0", createdAt: "2026-09-26T08:00:00.000Z" }),
+    receipt({ decisionClass: "RED", reasonCode: "KILL_SWITCH", amountMicros: "2000000", createdAt: "2026-09-26T08:05:00.000Z" }),
+    receipt({ decisionClass: "RED", reasonCode: "WORK_ORDER_CEILING", amountMicros: "1000000", createdAt: "2026-09-26T08:10:00.000Z" })
+  ]);
+  assert.equal(wall.refused, 3);
+  assert.equal(wall.refusedWithAmount, 2);
+  assert.equal(wall.refusedAmount, "3.00 USDC");
+});
+
 test("the only new site link to the wall is the footer", () => {
   const footer = fs.readFileSync("src/components/site-footer.tsx", "utf8");
   const layout = fs.readFileSync("src/app/layout.tsx", "utf8");

@@ -205,9 +205,14 @@ function modelTupleJson(result: ChannelRead): Record<string, unknown> | undefine
   }
 }
 
-function readoutOf(tuple: DecisionTuple | null, fallback: Readout): Readout {
+/** "not found on the bill"/"not found on the record": a model can return a tuple whose
+ *  work_order_id is present but blank (a real read that just didn't find a number), which is
+ *  different from not answering at all. Showing nothing in that case reads as a broken receipt
+ *  ("saw invoice , 480.00"); naming the gap instead is honest about what actually happened. */
+function readoutOf(tuple: DecisionTuple | null, fallback: Readout, side: "bill" | "record"): Readout {
   if (!tuple) return fallback;
-  return { workOrderId: tuple.workOrderId, amount: microsToUsdc(tuple.amountMicros) };
+  const workOrderId = tuple.workOrderId.trim() || (side === "bill" ? "not found on the bill" : "not found on the record");
+  return { workOrderId, amount: microsToUsdc(tuple.amountMicros) };
 }
 
 export type RefusalAdjudication = {
@@ -372,8 +377,8 @@ export async function runFoolItAttempt(input: {
     reconciled.reasonCode.startsWith("QUORUM_SPLIT") &&
     substituted;
 
-  const bill = readoutOf(artifactTuple, { workOrderId: parsed.workOrderId, amount: `${parsed.amountUsdc} USDC` });
-  const record = readoutOf(payerTuple, { workOrderId: SANDBOX_WORK_ORDER_ID, amount: `${SANDBOX_AMOUNT_USDC} USDC` });
+  const bill = readoutOf(artifactTuple, { workOrderId: parsed.workOrderId, amount: `${parsed.amountUsdc} USDC` }, "bill");
+  const record = readoutOf(payerTuple, { workOrderId: SANDBOX_WORK_ORDER_ID, amount: `${SANDBOX_AMOUNT_USDC} USDC` }, "record");
 
   if (!reconciled.ok) {
     if (reconciled.decisionClass !== "RED" || splitOnSubstitutedModels) {
