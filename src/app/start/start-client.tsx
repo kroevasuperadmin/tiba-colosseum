@@ -22,7 +22,7 @@ const CHAIN = chainName(defaultPublicChain);
 
 type Tab = "curl" | "mcp" | "telegram";
 
-export function StartClient() {
+export function StartClient({ signupRef = null }: { signupRef?: string | null }) {
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,7 +40,7 @@ export function StartClient() {
       const response = await fetch("/api/v1/workspaces", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, [ADDRESS_KEY]: address.trim() || undefined })
+        body: JSON.stringify({ name, [ADDRESS_KEY]: address.trim() || undefined, ...(signupRef ? { ref: signupRef } : {}) })
       });
       const payload = await response.json().catch(() => ({ error: "UNKNOWN" })) as { error?: string } & Partial<WorkspaceResult>;
       if (!response.ok) {
