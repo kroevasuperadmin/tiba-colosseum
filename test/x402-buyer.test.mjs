@@ -3,6 +3,8 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
+import { treasurySignatureOf } from "../src/lib/x402/settlement-proof.ts";
 import { evaluateBeforeDebit } from "../src/lib/policy.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 import { SOLANA_USDC_DEVNET_MINT } from "../src/lib/rails/solana.ts";
@@ -235,6 +237,7 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
   const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
   const events = [];
   let recorded;
+  let expectedSignature;
   try {
     const result = await payX402Resource(
       { id: "agent-1" },
@@ -242,6 +245,7 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
       {
         fetch,
         claimSignature: signatureClaims(),
+        treasurySignature: (transaction) => treasurySignatureOf(transaction, addresses.payer.publicKey),
         ensureObligation: async () => {
           events.push("obligation");
           return { recipientRef: "seller", workOrderRef: "X402-test" };
@@ -259,9 +263,10 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
           events.push("sign");
           return signExactSvmPayment(addresses.payer, chosen);
         },
-        recordSettlement: async (intentId, settlement) => {
+        recordSettlement: async (intentId, settlement, expected) => {
           events.push("record");
           recorded = settlement;
+          expectedSignature = expected;
           return blankIntent({
             id: intentId,
             status: "settled",
@@ -285,6 +290,10 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
     const tx = VersionedTransaction.deserialize(Buffer.from(payload.payload.transaction, "base64"));
     assert.equal(tx.message.staticAccountKeys[0].toBase58(), addresses.feePayer.publicKey.toBase58());
     assert.ok(tx.signatures[0].every((byte) => byte === 0));
+
+    // The buyer handed finalize Tiba's own signature out of the transaction it sent the seller.
+    const payerIndex = tx.message.staticAccountKeys.findIndex((key) => key.equals(addresses.payer.publicKey));
+    assert.equal(expectedSignature, bs58.encode(tx.signatures[payerIndex]));
   } finally {
     await mock.close();
   }
@@ -302,6 +311,7 @@ test("policy-refused x402 never reaches the signature step or the seller", async
       {
         fetch,
         claimSignature: signatureClaims(),
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => {
           events.push("gate");
@@ -344,6 +354,7 @@ test("two-channel disagreement refuses before any x402 signature", async () => {
       {
         fetch,
         claimSignature: signatureClaims(),
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => {
           events.push("gate");
@@ -385,6 +396,7 @@ test("a second call with the same idempotency key never reaches signPayment (one
   const deps = {
     fetch,
     claimSignature: signatureClaims(),
+    treasurySignature: () => null,
     ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
     // The engine's replay path: the same stored intent comes back, no checks, no limits.
     authorize: async () => stored,
@@ -436,6 +448,7 @@ test("a 402 asking for a different amount than the intent cleared is refused bef
           events.push("claim");
           return true;
         },
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => blankIntent({ amountMicros: AMOUNT }),
         signPayment: async () => {
@@ -459,6 +472,7 @@ test("a 402 asking for a different amount than the intent cleared is refused bef
       {
         fetch,
         claimSignature: async () => true,
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => blankIntent({ amountMicros: null }),
         signPayment: async () => { throw new Error("must not sign"); },
@@ -489,6 +503,7 @@ test("when the seller cannot be reached after the signature, the intent is recor
       {
         fetch: failingFetch,
         claimSignature: signatureClaims(),
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => blankIntent(),
         signPayment: async (chosen) => signExactSvmPayment(addresses.payer, chosen),
