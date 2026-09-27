@@ -124,6 +124,7 @@ test("totals match the rows, newest first, and a private field never appears", (
   assert.equal(wall.refused, wall.rows.filter((row) => row.outcome === "REFUSED").length);
   assert.equal(wall.checksRun, 4);
   assert.equal(wall.paid, 1);
+  assert.equal(wall.simulatedPaid, 0);
   assert.equal(wall.refused, 2);
   assert.equal(wall.refusedAmount, "3.00 USDC");
 
@@ -256,6 +257,56 @@ test("a mixed set counts and totals only the refusals that actually asked for mo
   assert.equal(wall.refused, 3);
   assert.equal(wall.refusedWithAmount, 2);
   assert.equal(wall.refusedAmount, "3.00 USDC");
+});
+
+test("simulated payments have their own total and are not counted as paid", () => {
+  const wall = buildRefusalWall([
+    receipt({ chain: "solana", createdAt: "2026-09-26T08:00:00.000Z" }),
+    receipt({
+      publicToken: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      chain: "mock",
+      createdAt: "2026-09-26T08:05:00.000Z"
+    }),
+    receipt({
+      publicToken: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      chain: null,
+      createdAt: "2026-09-26T08:10:00.000Z"
+    })
+  ]);
+
+  assert.equal(wall.checksRun, 3);
+  assert.equal(wall.paid, 1);
+  assert.equal(wall.simulatedPaid, 2);
+});
+
+test("database totals can cover more checks than the 200 displayed rows", () => {
+  const wall = buildRefusalWall(
+    [receipt({ chain: "solana" })],
+    {
+      checksRun: 250,
+      paid: 90,
+      simulatedPaid: 10,
+      refused: 120,
+      refusedWithAmount: 100,
+      refusedAmountMicros: "450000000"
+    }
+  );
+
+  assert.equal(wall.rows.length, 1);
+  assert.equal(wall.checksRun, 250);
+  assert.equal(wall.paid, 90);
+  assert.equal(wall.simulatedPaid, 10);
+  assert.equal(wall.refused, 120);
+  assert.equal(wall.refusedAmount, "450.00 USDC");
+});
+
+test("the wall query is demo-only, excludes sandbox rows, caps rows, and totals separately", () => {
+  const source = fs.readFileSync("src/lib/refusal-wall-data.ts", "utf8");
+  assert.match(source, /agentId: \{ not: SANDBOX_AGENT_ID \}/);
+  assert.match(source, /EXAMPLE_PAID_INTENT_ID/);
+  assert.match(source, /take: 200/);
+  assert.match(source, /payoutIntent\.groupBy/);
+  assert.match(source, /payoutIntent\.aggregate/);
 });
 
 test("the only new site link to the wall is the footer", () => {
