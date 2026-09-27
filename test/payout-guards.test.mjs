@@ -87,7 +87,7 @@ test("the engine checks size first and the budget before any row is written; the
   const size = engineSource.indexOf("assertArtifactSize(body.artifact)");
   const replay = engineSource.indexOf("findUnique({ where: { idempotencyKey: body.idempotency_key } })");
   const budget = engineSource.indexOf("await assertIntentBudget(agent.id)");
-  const firstWrite = engineSource.indexOf("prisma.payoutIntent.create(");
+  const firstWrite = engineSource.indexOf("tx.payoutIntent.create(");
   assert.ok(size > 0 && size < replay, "size is checked before the replay lookup");
   assert.ok(budget > replay && budget < firstWrite, "budget is checked after the replay lookup and before the first write");
   const counted = engineSource.slice(engineSource.indexOf("export async function assertIntentBudget"), size);
@@ -97,6 +97,28 @@ test("the engine checks size first and the budget before any row is written; the
   assert.match(intentsRoute, /ARTIFACT_TOO_LARGE, max_bytes: MAX_ARTIFACT_BYTES \}, \{ status: 413 \}/);
   assert.match(intentsRoute, /INTENT_RATE_LIMITED \}, \{ status: 429 \}/);
   assert.match(x402Route, /INTENT_RATE_LIMITED \}, \{ status: 429 \}/);
+});
+
+test("job #379's rate-limit race (S20) is closed: the real write recounts and inserts inside one locked transaction", () => {
+  // assertIntentBudget's own count-then-insert is a fast pre-check only -- two calls arriving
+  // together could both pass it before either wrote a row. The fix isn't there: it's a second,
+  // authoritative recheck that happens atomically with the actual insert, so nothing can slip
+  // through between the two. REVIEW_PR31.md, gap 1.
+  const txStart = engineSource.indexOf("prisma.$transaction(async (tx) =>");
+  const lock = engineSource.indexOf("pg_advisory_xact_lock");
+  const recount = engineSource.indexOf(
+    "tx.payoutIntent.count({ where: { agentId: agent.id, createdAt: { gte: since } } })"
+  );
+  const recheck = engineSource.indexOf("if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);", txStart);
+  const write = engineSource.indexOf("tx.payoutIntent.create(");
+  assert.ok(txStart > 0, "the create must run inside a transaction, not a bare prisma call");
+  assert.ok(lock > txStart, "the lock must be taken inside that transaction");
+  assert.ok(recount > lock, "the count must be re-read after the lock is held, not reused from the pre-check");
+  assert.ok(recheck > recount && recheck < write, "the recheck must run, and must run before the write it's guarding");
+  // Two callers can't both hold the same lock key at once, so this is the same key every time --
+  // a per-request key (e.g. hashed from agentId) would only serialize one workspace against
+  // itself and leave the deployment-wide half of the cap racing exactly as before.
+  assert.match(engineSource.slice(lock, lock + 40), /pg_advisory_xact_lock\(\d+\)/);
 });
 
 test("workspace creation has a deployment-wide hourly cap read from the database, not a per-instance map", () => {

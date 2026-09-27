@@ -177,21 +177,37 @@ export async function processPayoutIntent(
     orderBy: { expiresAt: "asc" }
   });
 
-  const intent = await prisma.payoutIntent.create({
-    data: {
-      agentId: agent.id,
-      recipientId: recipient.id,
-      status: "processing",
-      decisionClass: "AMBER",
-      idempotencyKey: body.idempotency_key,
-      publicToken: randomUUID(),
-      artifact: {
-        create: {
-          rawText: body.artifact,
-          sha256: hash(body.artifact)
+  // assertIntentBudget above is a fast pre-check only: its count and this insert are two
+  // separate round trips, so two calls arriving together can both count a spot free and both
+  // write (S20 -- confirmed in job #379's review, REVIEW_PR31.md). The recheck and the insert
+  // below happen inside one advisory-locked transaction instead, so nothing between the count
+  // and the write can slip through: a fixed lock key serializes intent creation
+  // deployment-wide, which is what closes the deployment-wide half of the cap, not just the
+  // per-workspace half.
+  const intent = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(872341)`;
+    const since = new Date(now.getTime() - 60 * 60 * 1000);
+    const [mine, all] = await Promise.all([
+      tx.payoutIntent.count({ where: { agentId: agent.id, createdAt: { gte: since } } }),
+      tx.payoutIntent.count({ where: { createdAt: { gte: since } } })
+    ]);
+    if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);
+    return tx.payoutIntent.create({
+      data: {
+        agentId: agent.id,
+        recipientId: recipient.id,
+        status: "processing",
+        decisionClass: "AMBER",
+        idempotencyKey: body.idempotency_key,
+        publicToken: randomUUID(),
+        artifact: {
+          create: {
+            rawText: body.artifact,
+            sha256: hash(body.artifact)
+          }
         }
       }
-    }
+    });
   });
 
   if (openWorkOrders.length === 0) {
