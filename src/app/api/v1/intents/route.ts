@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { IDEMPOTENCY_KEY_IN_USE } from "@/lib/payout-guards";
+import { ARTIFACT_TOO_LARGE, IDEMPOTENCY_KEY_IN_USE, INTENT_RATE_LIMITED, MAX_ARTIFACT_BYTES } from "@/lib/payout-guards";
 import { processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 
 export const runtime = "nodejs";
@@ -68,6 +68,12 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === IDEMPOTENCY_KEY_IN_USE) {
       return NextResponse.json({ error: IDEMPOTENCY_KEY_IN_USE }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === ARTIFACT_TOO_LARGE) {
+      return NextResponse.json({ error: ARTIFACT_TOO_LARGE, max_bytes: MAX_ARTIFACT_BYTES }, { status: 413 });
+    }
+    if (error instanceof Error && error.message === INTENT_RATE_LIMITED) {
+      return NextResponse.json({ error: INTENT_RATE_LIMITED }, { status: 429 });
     }
     console.error("[intents] processing failed:", error);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
