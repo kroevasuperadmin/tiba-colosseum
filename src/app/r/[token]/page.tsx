@@ -15,6 +15,7 @@ import { receiptAmountLines } from "@/lib/asked-amount";
 import { coinSymbol, microsToCoin, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 import { limitsStatus } from "@/lib/receipt-status";
+import { PayerRecordCheckDetail } from "@/lib/payer-record-receipt";
 
 export const dynamic = "force-dynamic";
 
@@ -270,23 +271,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
                 <td className="py-3 px-3">Check 2 — read your own records</td>
                 <td className="py-3 px-3">{getChannelMatchStatus(channelBTuple, channelATuple)}</td>
                 <td className="py-3 px-3">
-                  {adjudicationsByChannel.get("payer_record") ? (
-                    <div className="text-sm">
-                      <div className="break-all">Model used: {adjudicationsByChannel.get("payer_record")?.model}</div>
-                      {adjudicationsByChannel.get("payer_record")?.fallback ? (
-                        <div style={{ color: "var(--held)" }}>
-                          The reading service swapped in a different model for this reader:{" "}
-                          <span className="num break-all text-xs">{adjudicationsByChannel.get("payer_record")?.fallback}</span>
-                        </div>
-                      ) : null}
-                      <div>
-                        Reference (request ID):{" "}
-                        <span className="num break-all text-xs">
-                          {adjudicationsByChannel.get("payer_record")?.requestId ?? "missing"}
-                        </span>
-                      </div>
-                      <div>Took: <span className="num">{formatLatency(adjudicationsByChannel.get("payer_record")?.latencyMs)}</span></div>
-                    </div>
+                  {payerRow ? (
+                    <PayerRecordCheckDetail
+                      model={payerRow.model}
+                      fallback={payerRow.fallback}
+                      requestId={payerRow.requestId}
+                      latencyMs={payerRow.latencyMs}
+                    />
                   ) : (
                     "This check was not run."
                   )}
