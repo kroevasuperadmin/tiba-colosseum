@@ -3,6 +3,7 @@ import { register } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
+import { rulesInputSeen } from "../src/lib/payer-record-rules.ts";
 import { resetLedger, storedAdjudications, useRecipient, useWorkOrder } from "./payer-record-fake-db.mjs";
 
 register(pathToFileURL(path.join(import.meta.dirname, "payer-record-path-loader.mjs")).href, {
@@ -11,8 +12,9 @@ register(pathToFileURL(path.join(import.meta.dirname, "payer-record-path-loader.
 
 const { processPayoutIntent } = await import("../src/lib/payout-intent.ts");
 
-const LIVE_RECORD = {
-  approved_amount_micros: 1000000,
+/** Exact production payer_record: jsonb object, amount stored as the string "1000000". */
+const PRODUCTION_RECORD = {
+  approved_amount_micros: "1000000",
   delivery_status: "verified_complete",
   source: "operator-upload"
 };
@@ -47,9 +49,7 @@ function workOrder() {
     recipientId: RECIPIENT.id,
     ceilingMicros: 1_000_000n,
     briefText: "One open invoice.",
-    // Raw text of a jsonb string. One JSON.parse still leaves a string, which the
-    // first rules deploy treated as no record and held every both-check payment.
-    payerRecord: JSON.stringify(JSON.stringify(LIVE_RECORD)),
+    payerRecord: PRODUCTION_RECORD,
     requiredChannels: "both",
     expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     status: "open",
@@ -107,6 +107,19 @@ test("processPayoutIntent refuses 1.30 and agrees on 1.00 for the one open WO-R2
     assert.equal(over.status, "refused");
     assert.equal(over.decisionClass, "RED");
     assert.equal(over.reasonCode, "QUORUM_SPLIT:amount_micros");
+
+    const seen = rulesInputSeen;
+    console.log(
+      `[processPayoutIntent WO-R2] payer_record type=${seen.payerRecordType} value=${seen.payerRecordJson} ` +
+      `approved_amount_micros type=${seen.approvedAmountMicrosType} value=${seen.approvedAmountMicros} ` +
+      `delivery_status type=${seen.deliveryStatusType} value=${seen.deliveryStatus} keys=${seen.keys.join(",")}`
+    );
+    assert.equal(seen.payerRecordType, "object");
+    assert.equal(seen.approvedAmountMicrosType, "string");
+    assert.equal(seen.approvedAmountMicros, "1000000");
+    assert.equal(seen.deliveryStatusType, "string");
+    assert.equal(seen.deliveryStatus, "verified_complete");
+    assert.deepEqual(seen.keys, ["approved_amount_micros", "delivery_status", "source"]);
 
     const payer = storedAdjudications().find((row) => row.channel === "payer_record");
     assert.equal(payer.model, "rules");

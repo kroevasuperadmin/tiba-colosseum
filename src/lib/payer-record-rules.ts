@@ -1,14 +1,21 @@
 /**
  * Check 2, with no model and no database call. processPayoutIntent has already
  * loaded this recipient's open work orders and placed them on the message.
- * This function only reads that message. It must not import the database client
- * or open a connection: a second query is what exhausted the live pool.
+ * This function only reads that message. It must not import the database client.
  * Solana devnet test amounts only. This does not move money.
  *
- * Exactly one payer record whose delivery_status is "verified_complete" becomes
- * the tuple. Zero or several returns no tuple, so the payment is held and nothing
- * is guessed. A throw is not dropped: the message is stored as { error } so the
- * receipt can say why check 2 had no answer.
+ * The production work order WO-R2 stores payer_record as a jsonb object
+ * { approved_amount_micros: "1000000", delivery_status: "verified_complete", source: "operator-upload" }.
+ * On the payment message that value is an object, the amount is the string "1000000",
+ * and the status is the string "verified_complete". That input is one tuple.
+ *
+ * The live rules adjudication for that intent was ok false, latency 0, tuple null:
+ * the previous no-match return, which stored no reason. An object shaped as
+ * { $type: "Json", value } has no delivery_status of its own, and that return is
+ * what the previous function produced for it. Unwrap that tag. Exactly one
+ * verified_complete record becomes the tuple. Zero or several is not guessed.
+ * A miss or a throw is stored as { error } naming the type, keys, and status
+ * that arrived, so the receipt can say why check 2 had no answer.
  */
 
 export const PAYER_RECORD_RULES_MODEL = "rules" as const;
@@ -38,6 +45,57 @@ export type PayerRecordRulesResult = {
 
 type PayerMessage = { role: string; content: string };
 
+/** What the last call received on the first open order, before any unwrap. Tests print this. */
+export type RulesInputSeen = {
+  orderCount: number;
+  payerRecordType: string;
+  payerRecordJson: string;
+  approvedAmountMicrosType: string;
+  approvedAmountMicros: string | null;
+  deliveryStatusType: string;
+  deliveryStatus: string | null;
+  keys: string[];
+};
+
+export let rulesInputSeen: RulesInputSeen | null = null;
+
+function valueKind(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function shownScalar(value: unknown): string | null {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") return String(value);
+  return null;
+}
+
+function see(orders: readonly ScopedWorkOrder[]): void {
+  const order = orders[0];
+  const raw = order ? rawRecord(order) : undefined;
+  const rawObject = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+  const amount = rawObject ? (rawObject.approved_amount_micros ?? rawObject.approvedAmountMicros) : undefined;
+  const status = rawObject ? ("delivery_status" in rawObject ? rawObject.delivery_status : rawObject.deliveryStatus) : undefined;
+  let payerRecordJson = "";
+  try {
+    payerRecordJson = raw === undefined ? "" : JSON.stringify(raw);
+  } catch {
+    payerRecordJson = Object.prototype.toString.call(raw);
+  }
+  if (payerRecordJson.length > 500) payerRecordJson = payerRecordJson.slice(0, 500);
+  rulesInputSeen = {
+    orderCount: orders.length,
+    payerRecordType: order === undefined ? "missing" : valueKind(raw),
+    payerRecordJson,
+    approvedAmountMicrosType: valueKind(amount),
+    approvedAmountMicros: shownScalar(amount),
+    deliveryStatusType: valueKind(status),
+    deliveryStatus: typeof status === "string" ? status : null,
+    keys: rawObject ? Object.keys(rawObject) : []
+  };
+}
+
 function digitString(value: unknown): string | null {
   if (typeof value === "bigint" && value >= 0n) return value.toString();
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return String(value);
@@ -46,9 +104,10 @@ function digitString(value: unknown): string | null {
 }
 
 /**
- * jsonb can arrive as an object, as JSON text, or as quoted JSON text (a jsonb
- * string column's raw form). Parse until the value is an object. A non-JSON
- * string is not a record.
+ * A payer record arrives as an object, as JSON text, or still wrapped the way
+ * Prisma tags a json column: { $type: "Json", value }. That wrapper is an object
+ * with no delivery_status. The previous function treated it as no match and
+ * stored nothing. Read the inner value. A non-JSON string is not a record.
  */
 function asRecord(value: unknown, depth = 0): Record<string, unknown> | null {
   if (depth > 4) return null;
@@ -62,7 +121,11 @@ function asRecord(value: unknown, depth = 0): Record<string, unknown> | null {
     }
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+  const record = value as Record<string, unknown>;
+  if (record.$type === "Json" && "value" in record && Object.keys(record).every((key) => key === "$type" || key === "value")) {
+    return asRecord(record.value, depth + 1);
+  }
+  return record;
 }
 
 function rawRecord(order: ScopedWorkOrder): unknown {
@@ -139,13 +202,16 @@ function failureResult(error: string): PayerRecordRulesResult {
 
 function describeOrder(order: ScopedWorkOrder): string {
   const raw = rawRecord(order);
-  const kind = raw === null ? "null" : Array.isArray(raw) ? "array" : typeof raw;
+  const kind = valueKind(raw);
   const record = recordOf(order);
-  if (!record) return `payer_record ${kind}`;
-  const status = statusText(statusOf(record));
-  if (!status) return `payer_record ${kind}, delivery_status missing`;
-  if (status.length > 40 || /[\r\n]/.test(status)) return `payer_record ${kind}, delivery_status not verified_complete`;
-  return `payer_record ${kind}, delivery_status ${status}`;
+  const source = record ?? (raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : null);
+  if (!source) return `payer_record ${kind}`;
+  const keys = Object.keys(source).slice(0, 8).join(",");
+  const amount = source.approved_amount_micros ?? source.approvedAmountMicros;
+  const amountShown = shownScalar(amount);
+  const status = "delivery_status" in source ? source.delivery_status : source.deliveryStatus;
+  const statusShown = typeof status === "string" ? status.slice(0, 40) : null;
+  return `payer_record ${kind}, keys ${keys}, approved_amount_micros ${valueKind(amount)}${amountShown !== null ? ` ${amountShown.slice(0, 24)}` : ""}, delivery_status ${valueKind(status)}${statusShown ? ` ${statusShown}` : ""}`;
 }
 
 function explainMiss(orders: readonly ScopedWorkOrder[]): string {
@@ -196,6 +262,7 @@ export function readPayerRecordByRules(messages: readonly PayerMessage[]): Payer
         }
       }
     }
+    see(orders);
     const tuple = selectPayerRecordTuple(orders, receivedAt);
     if (!tuple) return failureResult(explainMiss(orders));
     return answer(tuple);

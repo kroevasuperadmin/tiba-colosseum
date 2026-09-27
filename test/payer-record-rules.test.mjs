@@ -4,17 +4,28 @@ import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { modelAnsweredWith } from "../src/lib/channel-makers.ts";
 import { runGonka } from "../src/lib/gonka.ts";
-import { PayerRecordCheckDetail } from "../src/lib/payer-record-receipt.ts";
-import { readPayerRecordByRules, selectPayerRecordTuple } from "../src/lib/payer-record-rules.ts";
+import { PayerRecordCheckDetail, payerRecordNoAnswer } from "../src/lib/payer-record-receipt.ts";
+import { readPayerRecordByRules, rulesInputSeen, selectPayerRecordTuple } from "../src/lib/payer-record-rules.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 
 const RECEIVED = "2026-09-27T13:06:00.000Z";
 
-const LIVE_RECORD = {
-  approved_amount_micros: 1000000,
+/** Production work_orders.payer_record for WO-R2, as read from the database. Amount is a string. */
+const PRODUCTION_RECORD = {
+  approved_amount_micros: "1000000",
   delivery_status: "verified_complete",
   source: "operator-upload"
 };
+
+function printSeen(label) {
+  const seen = rulesInputSeen;
+  console.log(
+    `[${label}] orders=${seen.orderCount} payer_record type=${seen.payerRecordType} value=${seen.payerRecordJson} ` +
+    `approved_amount_micros type=${seen.approvedAmountMicrosType} value=${seen.approvedAmountMicros} ` +
+    `delivery_status type=${seen.deliveryStatusType} value=${seen.deliveryStatus} keys=${seen.keys.join(",")}`
+  );
+  return seen;
+}
 
 function order(ref, record, ceiling = "9000000") {
   return {
@@ -90,8 +101,50 @@ test("exactly one verified work order returns that record's tuple", async () => 
   }
 });
 
-test("quoted jsonb text is still the one verified order", () => {
-  const objectText = JSON.stringify(LIVE_RECORD);
+test("the production WO-R2 object arrives as an object with a string amount and returns that tuple", () => {
+  const built = messages([{
+    id: "WO-R2",
+    ceiling_micros: "1000000",
+    brief_text: "One open invoice.",
+    payer_record: PRODUCTION_RECORD
+  }]);
+  const read = readPayerRecordByRules(built);
+  const seen = printSeen("WO-R2 production row");
+  assert.equal(seen.payerRecordType, "object");
+  assert.equal(seen.approvedAmountMicrosType, "string");
+  assert.equal(seen.approvedAmountMicros, "1000000");
+  assert.equal(seen.deliveryStatusType, "string");
+  assert.equal(seen.deliveryStatus, "verified_complete");
+  assert.deepEqual(seen.keys, ["approved_amount_micros", "delivery_status", "source"]);
+  assert.equal(read.ok, true);
+  assert.deepEqual(JSON.parse(read.content), {
+    work_order_id: "WO-R2",
+    amount_micros: "1000000",
+    delivery_timestamp: RECEIVED,
+    record_basis: "verified_complete"
+  });
+});
+
+test("a Prisma Json tag around that row used to return no tuple and now returns it", () => {
+  const pgText = JSON.stringify(PRODUCTION_RECORD);
+  const tagged = { $type: "Json", value: pgText };
+  const read = readPayerRecordByRules(messages([{
+    id: "WO-R2",
+    ceiling_micros: "1000000",
+    payer_record: tagged
+  }]));
+  const seen = printSeen("WO-R2 Prisma Json tag");
+  assert.equal(seen.payerRecordType, "object");
+  assert.deepEqual(seen.keys, ["$type", "value"]);
+  assert.equal(seen.deliveryStatusType, "missing");
+  assert.equal(seen.approvedAmountMicrosType, "missing");
+  assert.equal(read.ok, true);
+  assert.equal(JSON.parse(read.content).work_order_id, "WO-R2");
+  assert.equal(JSON.parse(read.content).amount_micros, "1000000");
+});
+
+test("json text and a camelCase record still return the tuple", () => {
+  const objectText = JSON.stringify(PRODUCTION_RECORD);
   const quotedColumnText = JSON.stringify(objectText);
   assert.equal(quotedColumnText[0], '"');
   assert.deepEqual(
@@ -143,8 +196,16 @@ test("zero verified work orders name the miss and hold the payment", () => {
   assert.equal(selectPayerRecordTuple(orders, RECEIVED), null);
   const read = readPayerRecordByRules(messages(orders));
   assert.equal(read.ok, false);
-  assert.match(JSON.parse(read.content).error, /no single verified_complete record/);
-  assert.match(JSON.parse(read.content).error, /delivery_status pending/);
+  const reason = JSON.parse(read.content).error;
+  assert.match(reason, /no single verified_complete record/);
+  assert.match(reason, /payer_record object/);
+  assert.match(reason, /delivery_status string pending/);
+  assert.match(reason, /approved_amount_micros string/);
+  const shown = payerRecordNoAnswer({ error: reason });
+  assert.equal(shown, reason);
+  const html = renderToStaticMarkup(PayerRecordCheckDetail({ model: "rules", noAnswer: shown }));
+  assert.match(html, /No answer: Check 2 saw 1 open order/);
+  assert.match(html, /delivery_status string pending/);
   const held = reconcile("both", {
     artifact: { workOrderId: "WO-1", amountMicros: 5_000_000n, deliveryTimestamp: RECEIVED }
   });
