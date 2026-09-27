@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { finalizeX402Settlement, processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 import { payX402Resource } from "@/lib/x402/buyer";
 import { x402RailRefusal } from "@/lib/x402/gate";
+import { guardedX402Fetch, X402_URL_NOT_ALLOWED } from "@/lib/x402/guarded-fetch";
 import { ensureX402Obligation } from "@/lib/x402/obligation";
 import { signExactSvmPayment } from "@/lib/x402/svm";
 import { solanaPayerKeypair } from "@/lib/rails/solana";
@@ -78,7 +79,8 @@ export async function POST(request: NextRequest) {
         idempotency_key: body.idempotency_key
       },
       {
-        fetch,
+        // https only, public hosts only, no redirects: the caller names the address.
+        fetch: guardedX402Fetch(),
         authorize: (_workspace, intentBody) =>
           processPayoutIntent(agent, intentBody, { settlement: "defer" }),
         // One signature per intent. The defer branch leaves reasonCode null; this flips it to
@@ -124,6 +126,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "RECIPIENT_NOT_FOUND") {
       return NextResponse.json({ error: "RECIPIENT_NOT_FOUND" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === X402_URL_NOT_ALLOWED) {
+      return NextResponse.json({ error: X402_URL_NOT_ALLOWED }, { status: 400 });
     }
     console.error("[x402] buyer failed:", error);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
