@@ -4,9 +4,12 @@ import test from "node:test";
 import { evaluateBeforeDebit } from "../src/lib/policy.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 import {
+  BOUNTY_SUMMARY_MAX_LENGTH,
+  BOUNTY_WORK_LINK_MAX_LENGTH,
   buildBountyPayerRecord,
   buildClaimArtifactText,
   bountyStatusAfter,
+  claimTextWithinLimits,
   evaluateClaimGate,
   requiredChannelsForBounty
 } from "../src/lib/bounty-claim-gate.ts";
@@ -176,4 +179,29 @@ test("a passed claim atomically changes the bounty from open to paying before wo
   assert.notEqual(lockAt, -1);
   assert.match(source.slice(lockAt, workOrderAt), /status: "open"[\s\S]*status: "paying"/);
   assert.ok(lockAt < workOrderAt);
+});
+
+test("claim text is bounded before the claim pipeline can write or call a model", () => {
+  assert.equal(claimTextWithinLimits({
+    workLink: "w".repeat(BOUNTY_WORK_LINK_MAX_LENGTH),
+    summary: "s".repeat(BOUNTY_SUMMARY_MAX_LENGTH)
+  }), true);
+  assert.equal(claimTextWithinLimits({
+    workLink: "w".repeat(BOUNTY_WORK_LINK_MAX_LENGTH + 1),
+    summary: "ok"
+  }), false);
+  assert.equal(claimTextWithinLimits({
+    workLink: "ok",
+    summary: "s".repeat(BOUNTY_SUMMARY_MAX_LENGTH + 1)
+  }), false);
+});
+
+test("the public claim route rate-limits before submitting a claim", () => {
+  const source = fs.readFileSync("src/app/api/v1/bounties/[id]/claims/route.ts", "utf8");
+  const ipLimitAt = source.indexOf("rateLimit(clientIp(request.headers))");
+  const dailyLimitAt = source.indexOf("prisma.bountyClaim.count");
+  const submitAt = source.indexOf("submitBountyClaim(bounty.agent");
+  assert.ok(ipLimitAt !== -1 && ipLimitAt < submitAt);
+  assert.ok(dailyLimitAt !== -1 && dailyLimitAt < submitAt);
+  assert.match(source.slice(dailyLimitAt, submitAt), /claimsInLastDay >= 100/);
 });
