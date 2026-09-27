@@ -14,7 +14,8 @@ import {
 import { assertReplayBelongsTo } from "@/lib/payout-guards";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
-import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
+import { committedPendingData, settleCommittedIntent } from "@/lib/payout-settlement";
+import { chainForRecipient, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
 import { isBase58Signature } from "@/lib/rails/base58";
 import { solanaExplorerTxUrl } from "@/lib/rails/solana";
 import { replenishDemoWorkOrder } from "@/lib/demo-replenish";
@@ -356,9 +357,13 @@ export async function processPayoutIntent(
     return toPublicIntent(updated);
   }
 
+  const pricing = await pricingData();
+
+  // Step 1, committed before any money moves: the debit, the discharge, and the intent marked
+  // pending. Nothing here touches the network, so a rollback can only mean the database refused.
+  let committed;
   try {
-    const pricing = await pricingData();
-    const updated = await prisma.$transaction(async (tx) => {
+    committed = await prisma.$transaction(async (tx) => {
       const debit = await debitAtomically(tx as unknown as SqlExecutor, agent as AgentLimits, reconciled.tuple.amountMicros, now);
       if (!debit.ok) {
         return tx.payoutIntent.update({
@@ -398,34 +403,14 @@ export async function processPayoutIntent(
         });
       }
 
-      const receipt = await payoutRail(agent.rail, target.chain).send({
-        recipientAddress: target.address,
-        amountMicros: reconciled.tuple.amountMicros,
-        intentId: intent.id
-      });
-      if (!receipt.digest || !receipt.explorerUrl) {
-        throw new PayoutRailError(executionFailedCode(target.chain), "Settlement did not return a digest.");
-      }
-
       return tx.payoutIntent.update({
         where: { id: intent.id },
-        data: {
-          workOrderId: selected.id,
-          amountMicros: reconciled.tuple.amountMicros,
-          status: "settled",
-          decisionClass: "PAID",
-          digest: receipt.digest,
-          explorerUrl: receipt.explorerUrl,
-          chain,
-          ...pricing
-        }
+        data: committedPendingData({ workOrderId: selected.id, amountMicros: reconciled.tuple.amountMicros, chain, pricing })
       });
-    }, { timeout: 120_000 });
-
-    await replenishDemoWorkOrder(prisma, { workOrderId: updated.workOrderId, settled: updated.status === "settled" });
-    return toPublicIntent(updated);
-  } catch {
-    const pricing = await pricingData();
+    });
+  } catch (error) {
+    // The database did not commit anything: no debit, no discharge, nothing sent.
+    console.error(`[intents] commit before settlement failed for intent ${intent.id}`, error);
     const updated = await prisma.payoutIntent.update({
       where: { id: intent.id },
       data: {
@@ -442,6 +427,21 @@ export async function processPayoutIntent(
     });
     return toPublicIntent(updated);
   }
+
+  if (committed.status !== "processing" || settlement === "defer") return toPublicIntent(committed);
+
+  // Step 2, outside any database transaction: sign, store the id, broadcast, confirm. Only a
+  // proven outcome changes the record; a timeout leaves it pending and the invoice closed.
+  await settleCommittedIntent(prisma, {
+    intentId: intent.id,
+    workOrderId: selected.id,
+    amountMicros: reconciled.tuple.amountMicros,
+    target,
+    rail: payoutRail(agent.rail, target.chain),
+    paidReasonCode: null,
+    pricing
+  });
+  return toPublicIntent(await prisma.payoutIntent.findUniqueOrThrow({ where: { id: intent.id } }));
 }
 
 /**
