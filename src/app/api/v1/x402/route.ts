@@ -81,6 +81,16 @@ export async function POST(request: NextRequest) {
         fetch,
         authorize: (_workspace, intentBody) =>
           processPayoutIntent(agent, intentBody, { settlement: "defer" }),
+        // One signature per intent. The defer branch leaves reasonCode null; this flips it to
+        // X402_SIGNING, finalize moves it on (PAID, SETTLEMENT_PENDING or SETTLEMENT_FAILED), so
+        // every later call, retried or in parallel, sees count 0 and never signs.
+        claimSignature: async (intentId) =>
+          (
+            await prisma.payoutIntent.updateMany({
+              where: { id: intentId, agentId: agent.id, x402Routed: true, status: "processing", reasonCode: null },
+              data: { reasonCode: "X402_SIGNING" }
+            })
+          ).count === 1,
         signPayment: (accepted) => signExactSvmPayment(solanaPayerKeypair(), accepted),
         recordSettlement: finalizeX402Settlement,
         ensureObligation: ensureX402Obligation

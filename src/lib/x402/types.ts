@@ -56,6 +56,8 @@ export type PublicX402Intent = {
   chain: string | null;
   signature: string | null;
   x402Routed: boolean;
+  /** Amount (micros) the checks cleared. The buyer refuses to sign a 402 that asks for anything else. */
+  amountMicros?: string | null;
 };
 
 export type X402Agent = { id: string };
