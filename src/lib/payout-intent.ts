@@ -183,7 +183,9 @@ export async function processPayoutIntent(
   // below happen inside one advisory-locked transaction instead, so nothing between the count
   // and the write can slip through: a fixed lock key serializes intent creation
   // deployment-wide, which is what closes the deployment-wide half of the cap, not just the
-  // per-workspace half.
+  // per-workspace half. The lock is pg_advisory_xact_lock, which Postgres releases when this
+  // transaction ends. That is allowed on Supabase's transaction pooler (port 6543). A session
+  // lock (pg_advisory_lock) would not be: that entrance drops the server session after commit.
   let intent;
   try {
     intent = await prisma.$transaction(async (tx) => {

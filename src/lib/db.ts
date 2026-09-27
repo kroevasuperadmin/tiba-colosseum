@@ -1,13 +1,15 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { openDatabaseAdapter } from "./db-pool";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
-const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) throw new Error("DATABASE_URL is required");
+function createPrisma(): PrismaClient {
+  const adapter = openDatabaseAdapter(PrismaPg);
+  return new PrismaClient({ adapter });
+}
 
-const adapter = new PrismaPg({ connectionString });
-
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
-
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+// One instance, one pool. Stored on globalThis so a second evaluation of this
+// module in the same process reuses the client instead of opening another pool.
+export const prisma = globalForPrisma.prisma ?? createPrisma();
+globalForPrisma.prisma = prisma;
