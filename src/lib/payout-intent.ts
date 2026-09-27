@@ -11,7 +11,13 @@ import {
   payerRecordDecisionSchema,
   payerRecordSystemPrompt
 } from "@/lib/prompts";
-import { assertReplayBelongsTo, effectiveChannels } from "@/lib/payout-guards";
+import {
+  assertArtifactSize,
+  assertReplayBelongsTo,
+  effectiveChannels,
+  INTENT_RATE_LIMITED,
+  intentBudgetExceeded
+} from "@/lib/payout-guards";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
 import { committedPendingData, settleCommittedIntent } from "@/lib/payout-settlement";
@@ -125,6 +131,19 @@ async function pricingData() {
   };
 }
 
+/**
+ * Throws INTENT_RATE_LIMITED before any row is written: nothing is stored and no receipt exists
+ * for a blocked call. Served by the existing (agentId, createdAt) index on payout_intents.
+ */
+export async function assertIntentBudget(agentId: string, now = new Date()): Promise<void> {
+  const since = new Date(now.getTime() - 60 * 60 * 1000);
+  const [mine, all] = await Promise.all([
+    prisma.payoutIntent.count({ where: { agentId, createdAt: { gte: since } } }),
+    prisma.payoutIntent.count({ where: { createdAt: { gte: since } } })
+  ]);
+  if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);
+}
+
 export async function processPayoutIntent(
   agent: Agent,
   body: IntentBody,
@@ -132,12 +151,14 @@ export async function processPayoutIntent(
 ): Promise<PublicIntent> {
   const gonka = options.gonka ?? runGonka;
   const settlement = options.settlement ?? "rail";
+  assertArtifactSize(body.artifact);
   const existing = await prisma.payoutIntent.findUnique({ where: { idempotencyKey: body.idempotency_key } });
   if (existing) {
     // Another workspace's key: refuse, and never hand back that workspace's intent or receipt token.
     assertReplayBelongsTo(existing, agent);
     return toPublicIntent(existing);
   }
+  await assertIntentBudget(agent.id);
 
   // Only this workspace's recipients, and through them only its own open invoices.
   const recipient = await prisma.recipient.findFirst({ where: { ref: body.recipient_ref, agentId: agent.id } });

@@ -7,6 +7,30 @@ import { requiredChannelsForAmount, type RequiredChannels } from "./reconcile.ts
 
 export const IDEMPOTENCY_KEY_IN_USE = "IDEMPOTENCY_KEY_IN_USE";
 
+export const ARTIFACT_TOO_LARGE = "ARTIFACT_TOO_LARGE";
+export const INTENT_RATE_LIMITED = "INTENT_RATE_LIMITED";
+
+/** Largest bill (delivery note / invoice text) a payment request may carry. */
+export const MAX_ARTIFACT_BYTES = 16 * 1024;
+/** Payment requests one workspace may start per rolling hour, refused or not. */
+export const INTENTS_PER_WORKSPACE_PER_HOUR = 60;
+// ponytail: one deployment-wide count is the backstop against many throwaway mock workspaces;
+// raise it or move to per-IP if a real customer ever needs more than 600 checks an hour.
+export const INTENTS_PER_DEPLOYMENT_PER_HOUR = 600;
+
+/** Throws before anything is stored when the bill text is over the cap. */
+export function assertArtifactSize(artifact: string): void {
+  if (Buffer.byteLength(artifact, "utf8") > MAX_ARTIFACT_BYTES) throw new Error(ARTIFACT_TOO_LARGE);
+}
+
+/**
+ * Every intent counts, refused ones included: each one runs the model checks and stores the
+ * bill, and refusals never reached the spend limits before. The counts come from the last hour.
+ */
+export function intentBudgetExceeded(counts: { mine: number; all: number }): boolean {
+  return counts.mine >= INTENTS_PER_WORKSPACE_PER_HOUR || counts.all >= INTENTS_PER_DEPLOYMENT_PER_HOUR;
+}
+
 const STRICTNESS: Record<RequiredChannels, number> = { payer_record: 0, both: 1, human: 2 };
 
 /**
