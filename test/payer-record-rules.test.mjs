@@ -89,6 +89,31 @@ test("exactly one verified work order returns that record's tuple", async () => 
   }
 });
 
+test("a payer record stored as JSON text is still the one verified order", () => {
+  const stored = JSON.stringify({
+    approved_amount_micros: 1000000,
+    delivery_status: "verified_complete",
+    source: "operator-upload"
+  });
+  assert.deepEqual(
+    selectPayerRecordTuple(
+      [{ id: "WO-R2", ceiling_micros: "1000000", payer_record: stored }],
+      RECEIVED
+    ),
+    { ref: "WO-R2", approved_amount_micros: "1000000", received_at: RECEIVED }
+  );
+
+  const camel = selectPayerRecordTuple(
+    [{
+      ref: "WO-R2",
+      ceilingMicros: 1_000_000n,
+      payerRecord: { approvedAmountMicros: 1_000_000n, deliveryStatus: "verified_complete" }
+    }],
+    RECEIVED
+  );
+  assert.equal(camel.approved_amount_micros, "1000000");
+});
+
 test("a verified work order with no approved amount uses the ceiling", () => {
   const fromMessage = selectPayerRecordTuple(
     [order("WO-CEILING", { delivery_status: "verified_complete" }, "180000000")],
