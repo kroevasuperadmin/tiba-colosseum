@@ -142,7 +142,19 @@ export async function payX402Resource(
     return { kind: "refused", intent, error: "X402_ALREADY_SIGNED" };
   }
 
-  const transaction = await deps.signPayment(accepted);
+  let transaction: string;
+  try {
+    transaction = await deps.signPayment(accepted);
+  } catch {
+    // The claim was taken but no signature exists, so nothing can move: record the failure
+    // rather than leaving the intent stuck as "signing".
+    const recorded = await deps.recordSettlement(
+      intent.id,
+      { success: false, errorReason: "X402_SIGNING_FAILED", transaction: "", network: accepted.network },
+      null
+    );
+    return { kind: "error", error: "X402_SIGNING_FAILED", intent: recorded };
+  }
   const expectedSignature = deps.treasurySignature(transaction);
   const retryHeaders: Record<string, string> = {
     ...(input.headers ?? {}),
