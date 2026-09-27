@@ -8,6 +8,7 @@ import { x402RailRefusal } from "@/lib/x402/gate";
 import { guardedX402Fetch, X402_URL_NOT_ALLOWED } from "@/lib/x402/guarded-fetch";
 import { ensureX402Obligation } from "@/lib/x402/obligation";
 import { treasurySignatureOf } from "@/lib/x402/settlement-proof";
+import { X402_SIGNING_CLAIMED, x402SigningReasonCode } from "@/lib/x402/signing-recovery";
 import { signExactSvmPayment } from "@/lib/x402/svm";
 import { solanaPayerKeypair } from "@/lib/rails/solana";
 
@@ -92,10 +93,20 @@ export async function POST(request: NextRequest) {
           (
             await prisma.payoutIntent.updateMany({
               where: { id: intentId, agentId: agent.id, x402Routed: true, status: "processing", reasonCode: null },
-              data: { reasonCode: "X402_SIGNING" }
+              data: { reasonCode: X402_SIGNING_CLAIMED }
             })
           ).count === 1,
         signPayment: (accepted) => signExactSvmPayment(solanaPayerKeypair(), accepted),
+        // Overwrites X402_SIGNING with X402_SIGNING:<signature> the moment a signature exists, so
+        // a crash before the seller round-trip finishes leaves proof a recovery pass can check
+        // on chain instead of a bare, unrecoverable "signing" (gap 3, REVIEW_PR31.md). Scoped the
+        // same way the claim itself was, so it can only ever move this exact intent forward.
+        recordSigned: async (intentId, expectedSignature) => {
+          await prisma.payoutIntent.updateMany({
+            where: { id: intentId, agentId: agent.id, x402Routed: true, status: "processing", reasonCode: X402_SIGNING_CLAIMED },
+            data: { reasonCode: x402SigningReasonCode(expectedSignature) }
+          });
+        },
         treasurySignature: (transaction) => treasurySignatureOf(transaction, solanaPayerKeypair().publicKey),
         recordSettlement: (intentId, settlement, expectedSignature) =>
           finalizeX402Settlement(intentId, settlement, expectedSignature),
