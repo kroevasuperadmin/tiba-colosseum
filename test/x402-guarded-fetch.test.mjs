@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import http from "node:http";
 import test from "node:test";
-import { assertX402UrlAllowed, guardedX402Fetch, X402_URL_NOT_ALLOWED } from "../src/lib/x402/guarded-fetch.ts";
+import { Agent, fetch as undiciFetch } from "undici";
+import { assertX402UrlAllowed, guardedX402Fetch, resolveX402UrlIfAllowed, X402_URL_NOT_ALLOWED } from "../src/lib/x402/guarded-fetch.ts";
 
 const routeSource = readFileSync(new URL("../src/app/api/v1/x402/route.ts", import.meta.url), "utf8");
 
@@ -96,6 +98,59 @@ test("a public https seller is fetched with redirects disabled and a timeout, an
 
   const literal = await assertX402UrlAllowed("https://93.184.216.34/premium", resolver({}));
   assert.equal(literal.hostname, "93.184.216.34");
+});
+
+test("resolveX402UrlIfAllowed hands back exactly the addresses it checked", async () => {
+  const answers = [{ address: "93.184.216.34", family: 4 }, { address: "2606:2800:220:1:248:1893:25c8:1946", family: 6 }];
+  const resolved = await resolveX402UrlIfAllowed(
+    "https://api.example.com/premium",
+    async () => answers
+  );
+  assert.equal(resolved.url.hostname, "api.example.com");
+  assert.deepEqual(resolved.addresses, answers);
+});
+
+test("guardedX402Fetch resolves DNS exactly once per request, never again for the real connection", async () => {
+  // A rebinding attacker answers differently on a second query. If this ever re-resolved for
+  // the real connection instead of reusing what the check already approved, a second call here
+  // would hand back the private address rather than the one that passed.
+  let calls = 0;
+  const rebindingLookup = async () => {
+    calls += 1;
+    return calls === 1 ? [{ address: "93.184.216.34", family: 4 }] : [{ address: "127.0.0.1", family: 4 }];
+  };
+  let capturedInit;
+  const fetchImpl = async (_url, init) => {
+    capturedInit = init;
+    return new Response("ok", { status: 200 });
+  };
+
+  const fetchGuarded = guardedX402Fetch(fetchImpl, rebindingLookup);
+  await fetchGuarded("https://api.example.com/premium");
+
+  assert.equal(calls, 1, "the guard must resolve DNS exactly once per request");
+  assert.ok(capturedInit.dispatcher, "the request must carry a dispatcher pinning the connection");
+});
+
+test("the pin actually works: a hostname real DNS cannot resolve still reaches the checked address", async () => {
+  // The real proof, not just a source-reading check: build the exact kind of pinned Agent
+  // guardedX402Fetch builds, by hand, and use it with the real undici fetch against a plain
+  // local server. The hostname below cannot resolve on any real network (.invalid is reserved
+  // for exactly this) -- if the pin didn't work, this would fail with an ENOTFOUND, not a 200.
+  const server = http.createServer((_req, res) => res.end("pinned"));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  try {
+    const pinned = new Agent({
+      connect: { lookup: (_hostname, _options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]) }
+    });
+    const response = await undiciFetch(`http://this-name-cannot-possibly-resolve.invalid:${port}/`, { dispatcher: pinned });
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "pinned");
+    await pinned.close();
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("the x402 route hands the buyer the guarded fetch, not the global one", () => {
