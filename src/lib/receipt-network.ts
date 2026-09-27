@@ -1,3 +1,5 @@
+import { microsToUsdc } from "./money.ts";
+
 // Payout records pre-dating the Solana rail explicitly say "sui" -- that is a real
 // legacy signal. A null chain means no settlement was attempted at all (an early
 // refusal, gate refusal, or sandbox try): it never touched any chain, Sui included.
@@ -17,4 +19,18 @@ export function receiptNetwork(chain: string | null): string {
 export function receiptViewingKeyNote(chain: string | null): string | null {
   if (chain === "zcash") return "viewing key available on request";
   return null;
+}
+
+/** The coin actually paid out. Every rail settles in its own coin, not USDC:
+ *  Tempo test payments are pathUSD, Zcash test payments are TAZ. Solana (and every
+ *  chain-less case: not yet settled, simulated, or a legacy row) stays USDC. */
+export function coinSymbol(chain: string | null): string {
+  if (chain === "tempo") return "pathUSD";
+  if (chain === "zcash") return "TAZ";
+  return "USDC";
+}
+
+/** microsToUsdc's digits, in the coin the chain actually settles in. */
+export function microsToCoin(micros: bigint | number | string, chain: string | null): string {
+  return `${microsToUsdc(micros).replace(/ USDC$/, "")} ${coinSymbol(chain)}`;
 }
