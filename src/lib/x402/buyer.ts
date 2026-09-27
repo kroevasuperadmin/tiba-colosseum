@@ -30,6 +30,15 @@ export type X402BuyerDeps = {
   claimSignature: (intentId: string) => Promise<boolean>;
   signPayment: (accepted: PaymentRequirements) => Promise<string>;
   /**
+   * Persist Tiba's own signature the moment it exists, before the seller round-trip that could
+   * crash mid-flight. Without this, a crash between signing and recordSettlement leaves the
+   * intent stuck at X402_SIGNING forever with no way to tell "never signed, safe to fail" apart
+   * from "signed, maybe sent, needs an on-chain check" (job #379's review, REVIEW_PR31.md, gap 3).
+   * A no-op is fine when expectedSignature is null (signPayment succeeded but the signature
+   * couldn't be read back) -- that narrow case is no worse than before this fix.
+   */
+  recordSigned: (intentId: string, expectedSignature: string) => Promise<void>;
+  /**
    * Record what the seller reported. `expectedSignature` is Tiba's own signature inside the
    * transaction it signed (null when it cannot be read); a settlement is only PAID when the
    * seller's transaction id is confirmed on chain and carries that signature.
@@ -156,6 +165,10 @@ export async function payX402Resource(
     return { kind: "error", error: "X402_SIGNING_FAILED", intent: recorded };
   }
   const expectedSignature = deps.treasurySignature(transaction);
+  if (expectedSignature) {
+    // A crash from here on has real proof material to recover from: gap 3's fix.
+    await deps.recordSigned(intent.id, expectedSignature);
+  }
   const retryHeaders: Record<string, string> = {
     ...(input.headers ?? {}),
     "PAYMENT-SIGNATURE": encodePaymentSignature({

@@ -263,6 +263,11 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
           events.push("sign");
           return signExactSvmPayment(addresses.payer, chosen);
         },
+        recordSigned: async (intentId, signature) => {
+          events.push("signed");
+          assert.equal(typeof intentId, "string");
+          assert.equal(typeof signature, "string");
+        },
         recordSettlement: async (intentId, settlement, expected) => {
           events.push("record");
           recorded = settlement;
@@ -283,7 +288,7 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
     assert.equal(result.intent.decisionClass, "PAID");
     assert.equal(result.intent.x402Routed, true);
     assert.equal(mock.signedRequests.length, 1);
-    assert.deepEqual(events, ["obligation", "gate", "two-channel", "policy", "sign", "record"]);
+    assert.deepEqual(events, ["obligation", "gate", "two-channel", "policy", "sign", "signed", "record"]);
     assert.equal(recorded.success, true);
 
     const payload = JSON.parse(Buffer.from(mock.signedRequests[0], "base64").toString("utf8"));

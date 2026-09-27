@@ -22,6 +22,7 @@
     "solana:smoke": "node scripts/solana-smoke.mjs",
     "tempo:smoke": "node scripts/tempo-smoke.mjs",
     "a2a:proof": "node scripts/a2a-proof.mjs",
+    "recover:x402-signing": "node scripts/recover-stuck-x402-signing.mjs",
     "postinstall": "prisma generate",
     "t3:demo": "node --no-warnings scripts/t3-identity-demo.mjs"
   },
