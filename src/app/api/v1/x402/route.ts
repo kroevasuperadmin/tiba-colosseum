@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { finalizeX402Settlement, processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 import { payX402Resource } from "@/lib/x402/buyer";
+import { x402RailRefusal } from "@/lib/x402/gate";
 import { ensureX402Obligation } from "@/lib/x402/obligation";
 import { signExactSvmPayment } from "@/lib/x402/svm";
 import { solanaPayerKeypair } from "@/lib/rails/solana";
@@ -39,6 +40,11 @@ export async function POST(request: NextRequest) {
 
   const agent = await prisma.agent.findUnique({ where: { apiKeyHash: hash(secret) } });
   if (!agent) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+
+  // Practice wallets and non-Solana deployments never get the treasury to sign. Checked before
+  // the body is read or any address is fetched.
+  const railRefusal = x402RailRefusal(agent.rail);
+  if (railRefusal) return NextResponse.json({ error: railRefusal }, { status: 403 });
 
   let body: { url?: unknown; method?: unknown; idempotency_key?: unknown; headers?: unknown; body?: unknown };
   try {
