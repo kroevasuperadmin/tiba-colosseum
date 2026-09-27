@@ -142,8 +142,9 @@ export default async function Home() {
           </div>
           <p className="lede mt-8 text-sm text-muted">
             18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
-            None refuses a wrong bill automatically (one mentions checking invoices, and a person
-            still approves). 0 of 17 give a receipt for a refusal.
+            Of the 18 we compared as of 25 Sep 2026, none offered both a bill check and a public
+            receipt for a refusal. Tiba works for any payer and any bill, not one supply chain, and
+            every check, paid or refused, gets a public receipt anyone can open by link.
           </p>
         </section>
 
