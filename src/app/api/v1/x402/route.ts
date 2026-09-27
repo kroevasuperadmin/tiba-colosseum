@@ -6,6 +6,7 @@ import { payX402Resource } from "@/lib/x402/buyer";
 import { x402RailRefusal } from "@/lib/x402/gate";
 import { guardedX402Fetch, X402_URL_NOT_ALLOWED } from "@/lib/x402/guarded-fetch";
 import { ensureX402Obligation } from "@/lib/x402/obligation";
+import { treasurySignatureOf } from "@/lib/x402/settlement-proof";
 import { signExactSvmPayment } from "@/lib/x402/svm";
 import { solanaPayerKeypair } from "@/lib/rails/solana";
 
@@ -94,7 +95,9 @@ export async function POST(request: NextRequest) {
             })
           ).count === 1,
         signPayment: (accepted) => signExactSvmPayment(solanaPayerKeypair(), accepted),
-        recordSettlement: finalizeX402Settlement,
+        treasurySignature: (transaction) => treasurySignatureOf(transaction, solanaPayerKeypair().publicKey),
+        recordSettlement: (intentId, settlement, expectedSignature) =>
+          finalizeX402Settlement(intentId, settlement, expectedSignature),
         ensureObligation: ensureX402Obligation
       }
     );

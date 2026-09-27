@@ -120,7 +120,8 @@ export function isSolanaAddress(value: string): boolean {
 
 export function solanaExplorerTxUrl(signature: string): string {
   const base = (envValue("SOLANA_EXPLORER_BASE") ?? "https://explorer.solana.com").replace(/\/$/, "");
-  return `${base}/tx/${signature}?cluster=devnet`;
+  // Callers pass ids they produced or already validated as base58; encoding keeps a stray one inert.
+  return `${base}/tx/${encodeURIComponent(signature)}?cluster=devnet`;
 }
 
 export function solanaPayerKeypair(): Keypair {

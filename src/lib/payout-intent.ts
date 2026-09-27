@@ -14,9 +14,11 @@ import {
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
 import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
+import { isBase58Signature } from "@/lib/rails/base58";
 import { solanaExplorerTxUrl } from "@/lib/rails/solana";
 import { replenishDemoWorkOrder } from "@/lib/demo-replenish";
 import { X402_NEEDS_LIVE_WALLET } from "@/lib/x402/gate";
+import { readSolanaTransaction, x402SettlementProven, type ChainTransactionReader } from "@/lib/x402/settlement-proof";
 import type { SettlementResponse } from "@/lib/x402/types";
 
 export type PublicIntent = {
@@ -437,17 +439,31 @@ export async function processPayoutIntent(
   }
 }
 
-export async function finalizeX402Settlement(intentId: string, settlement: SettlementResponse): Promise<PublicIntent> {
+/**
+ * Record what an x402 seller reported. PAID needs proof, not the seller's word: the reported
+ * transaction id must be a confirmed, error-free transaction on Solana devnet that carries
+ * Tiba's own signature (which covers the exact amount, mint and payTo the checks cleared).
+ * Anything short of that stays SETTLEMENT_PENDING. The invoice stays discharged either way.
+ */
+export async function finalizeX402Settlement(
+  intentId: string,
+  settlement: SettlementResponse,
+  expectedSignature: string | null = null,
+  readTransaction: ChainTransactionReader = readSolanaTransaction
+): Promise<PublicIntent> {
   const intent = await prisma.payoutIntent.findUnique({ where: { id: intentId } });
   if (!intent) throw new Error("INTENT_NOT_FOUND");
   if (!intent.x402Routed) throw new Error("INTENT_NOT_X402");
 
-  const pending = settlement.errorReason === "settlement_pending";
-  const digest = settlement.transaction?.trim() ? settlement.transaction.trim() : null;
+  const reported = settlement.transaction?.trim() ?? "";
+  // A transaction id that is not base58 is not a transaction id: never stored, never linked.
+  const digest = reported && isBase58Signature(reported) ? reported : null;
   const explorerUrl = digest ? solanaExplorerTxUrl(digest) : null;
+  const proven = settlement.success && (await x402SettlementProven(digest, expectedSignature, readTransaction));
+  const pending = settlement.errorReason === "settlement_pending" || (settlement.success && !proven);
   const pricing = await pricingData();
 
-  if (settlement.success) {
+  if (proven) {
     const updated = await prisma.payoutIntent.update({
       where: { id: intentId },
       data: {
