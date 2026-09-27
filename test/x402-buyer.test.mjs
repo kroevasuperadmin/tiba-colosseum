@@ -523,6 +523,38 @@ test("when the seller cannot be reached after the signature, the intent is recor
   }
 });
 
+test("when signing itself fails after the claim, the intent is recorded failed, not left as 'signing'", async () => {
+  const addresses = keys();
+  const accepted = acceptedFor(addresses);
+  const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
+  let recorded = null;
+  try {
+    const result = await payX402Resource(
+      { id: "agent-1" },
+      { url: mock.url, idempotency_key: randomUUID() },
+      {
+        fetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: () => null,
+        ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+        authorize: async () => blankIntent(),
+        signPayment: async () => { throw new Error("SOLANA_PRIVATE_KEY_MISSING"); },
+        recordSettlement: async (intentId, settlement) => {
+          recorded = settlement;
+          return blankIntent({ id: intentId, status: "refused", decisionClass: "RED", reasonCode: "SETTLEMENT_FAILED" });
+        }
+      }
+    );
+    assert.equal(result.kind, "error");
+    assert.equal(result.error, "X402_SIGNING_FAILED");
+    assert.equal(recorded.success, false);
+    assert.equal(recorded.errorReason, "X402_SIGNING_FAILED");
+    assert.equal(mock.signedRequests.length, 0, "the seller never saw a signature");
+  } finally {
+    await mock.close();
+  }
+});
+
 test("PAYMENT-RESPONSE settlement_pending is recorded without treating it as paid", () => {
   const header = encodeBase64Json({
     success: false,
