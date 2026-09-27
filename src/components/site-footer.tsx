@@ -8,6 +8,10 @@ export function SiteFooter() {
         <Link className="link" href="/wall">
           Every check
         </Link>
+        {" · "}
+        <Link className="link" href="/since">
+          Ship log
+        </Link>
       </div>
     </footer>
   );
