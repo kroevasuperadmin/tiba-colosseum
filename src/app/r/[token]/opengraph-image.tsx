@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { prisma } from "@/lib/db";
-import { microsToUsdc } from "@/lib/money";
 import { receiptComparisonFromStored, receiptShareLines } from "@/lib/receipt-comparison";
+import { microsToCoin, receiptNetwork } from "@/lib/receipt-network";
 
 export const alt = "Tiba receipt";
 export const size = { width: 1200, height: 630 };
@@ -54,14 +54,17 @@ export default async function Image({ params }: { params: Promise<{ token: strin
   });
 
   if (!intent) {
-    return new ImageResponse(card({ outcome: "Receipt not found", amount: "", network: "", mismatch: null }), { ...size });
+    return new ImageResponse(
+      card({ outcome: "Receipt not found", amount: "", network: "Test network", mismatch: null }),
+      { ...size }
+    );
   }
 
   const artifact = intent.adjudications.find((row) => row.channel === "artifact") ?? null;
   const payerRecord = intent.adjudications.find((row) => row.channel === "payer_record") ?? null;
   const share = receiptShareLines({
     decisionClass: intent.decisionClass,
-    amount: microsToUsdc(intent.amountMicros),
+    amount: microsToCoin(intent.amountMicros, intent.chain),
     chain: intent.chain,
     comparison: receiptComparisonFromStored({
       artifact: artifact ? { tupleJson: artifact.tupleJson } : null,
@@ -69,5 +72,5 @@ export default async function Image({ params }: { params: Promise<{ token: strin
     })
   });
 
-  return new ImageResponse(card(share), { ...size });
+  return new ImageResponse(card({ ...share, network: receiptNetwork(intent.chain) }), { ...size });
 }
