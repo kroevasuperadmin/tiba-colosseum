@@ -17,3 +17,9 @@ test("sandbox receipts do not fetch or store a retired GNK price", () => {
   assert.match(source, /gnkUsd: null/);
   assert.match(source, /pricingUpdatedAt: null/);
 });
+
+test("the example environment names the inference key the Groq client reads", () => {
+  const example = fs.readFileSync(".env.example", "utf8");
+  assert.match(example, /^GROQ_API_KEY=/m);
+  assert.doesNotMatch(example, /^GONKA_API_KEY=/m);
+});
