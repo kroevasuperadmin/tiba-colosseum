@@ -1,5 +1,6 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
+import { Agent } from "undici";
 
 export const X402_URL_NOT_ALLOWED = "X402_URL_NOT_ALLOWED";
 /** Sellers that do not answer in this long are treated as unreachable. */
@@ -52,11 +53,15 @@ export function addressIsBlocked(entry: ResolvedAddress): boolean {
   }
 }
 
+export type AllowedX402Target = { url: URL; addresses: ResolvedAddress[] };
+
 /**
  * The only addresses the x402 buyer may fetch: https, to a public host. Resolves the host and
  * refuses when any answer is a private, loopback, link-local or otherwise non-public address.
+ * Returns the exact addresses that were checked, so a caller that connects with them (rather
+ * than re-resolving) never re-opens the gap between this check and the real connection.
  */
-export async function assertX402UrlAllowed(url: string | URL, lookup: AddressLookup = defaultLookup): Promise<URL> {
+export async function resolveX402UrlIfAllowed(url: string | URL, lookup: AddressLookup = defaultLookup): Promise<AllowedX402Target> {
   let parsed: URL;
   try {
     parsed = new URL(String(url));
@@ -80,24 +85,46 @@ export async function assertX402UrlAllowed(url: string | URL, lookup: AddressLoo
     }
   }
   if (addresses.length === 0 || addresses.some(addressIsBlocked)) throw new Error(X402_URL_NOT_ALLOWED);
-  return parsed;
+  return { url: parsed, addresses };
+}
+
+/** Same check, for a caller that only needs the URL back (kept for callers that don't connect themselves). */
+export async function assertX402UrlAllowed(url: string | URL, lookup: AddressLookup = defaultLookup): Promise<URL> {
+  return (await resolveX402UrlIfAllowed(url, lookup)).url;
 }
 
 /**
  * fetch for seller addresses the caller names. Redirects are not followed (a public host could
  * otherwise bounce the request to an internal one), and every request has a timeout.
  *
- * ponytail: resolve-then-fetch leaves a DNS-rebinding gap between the check and the connect. Pin
- * the resolved address with an undici Agent connect.lookup if this path ever carries real money.
+ * The connection is pinned to exactly the addresses resolveX402UrlIfAllowed already checked,
+ * via an undici Agent whose connect.lookup hands those straight to the TCP connect instead of
+ * letting Node re-resolve the hostname: resolve-then-fetch otherwise leaves a DNS-rebinding gap
+ * where a seller's DNS answers a public address for the check and a private one moments later
+ * for the real connection.
  */
 export function guardedX402Fetch(fetchImpl: typeof fetch = fetch, lookup: AddressLookup = defaultLookup): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const target = input instanceof Request ? input.url : input;
-    const url = await assertX402UrlAllowed(target, lookup);
-    return fetchImpl(url, {
-      ...init,
-      redirect: "manual",
-      signal: init?.signal ?? AbortSignal.timeout(X402_FETCH_TIMEOUT_MS)
+    const { url, addresses } = await resolveX402UrlIfAllowed(target, lookup);
+    const pinned = new Agent({
+      connect: {
+        lookup: (_hostname: string, _options: unknown, callback: (err: Error | null, addresses: ResolvedAddress[]) => void) =>
+          callback(null, addresses)
+      }
     });
+    try {
+      return await fetchImpl(url, {
+        ...init,
+        redirect: "manual",
+        // @ts-expect-error dispatcher is undici's, not in the standard fetch types
+        dispatcher: pinned,
+        signal: init?.signal ?? AbortSignal.timeout(X402_FETCH_TIMEOUT_MS)
+      });
+    } finally {
+      // Fire-and-forget: closing is cleanup, not part of the guard, and must never block or
+      // fail the response the caller is waiting on.
+      void pinned.close().catch(() => {});
+    }
   }) as typeof fetch;
 }
