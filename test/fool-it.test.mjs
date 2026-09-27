@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { CANDIDATES } from "../src/lib/gonka.ts";
 import { artifactDecisionSchema, artifactSystemPrompt, payerRecordDecisionSchema, payerRecordSystemPrompt } from "../src/lib/prompts.ts";
 import { readSandboxChannels } from "../src/lib/fool-it-read.ts";
 import {
@@ -334,6 +335,18 @@ test("the sandbox reader uses the live prompts and keeps the bill off the payer 
   const messages = sandboxChannelRequests({ billText: "BILL-MARK-9.50", receivedAt: RECEIVED });
   assert.deepEqual(messages.artifact, seen[0].messages);
   assert.deepEqual(messages.payer, seen[1].messages);
+});
+
+test("sandbox reader failures name the configured Groq candidates, not retired models", async () => {
+  const result = await readSandboxChannels(
+    { billText: "BILL-MARK-9.50", receivedAt: RECEIVED },
+    async () => {
+      throw new Error("reader unavailable");
+    }
+  );
+
+  assert.equal(result.artifact.model, CANDIDATES.artifact[0]);
+  assert.equal(result.payer.model, CANDIDATES.payer_record[0]);
 });
 
 test("the sandbox workspace cannot be a payable wallet", () => {

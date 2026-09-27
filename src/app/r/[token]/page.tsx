@@ -45,18 +45,6 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   };
 }
 
-function formatTime(date: Date | null): string {
-  if (!date) return "time unknown";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short"
-  }).format(date);
-}
-
 export default async function ReceiptPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const intent = await prisma.payoutIntent.findUnique({
@@ -336,22 +324,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               ) : null}
             </tbody>
           </table>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="card p-5">
-            <h2 className="title">Verification cost (GNK/USD)</h2>
-            {intent.gnkUsd ? (
-              <p className="num mt-3 text-2xl">
-                ${intent.gnkUsd}
-                <span className="ml-2 align-middle text-sm font-medium text-muted">
-                  at {formatTime(intent.pricingUpdatedAt)}
-                </span>
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-muted">price not available</p>
-            )}
           </div>
         </section>
 
