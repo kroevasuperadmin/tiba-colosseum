@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import { evaluateBeforeDebit } from "../src/lib/policy.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 import {
+  BOUNTY_SUMMARY_MAX_LENGTH,
+  BOUNTY_WORK_LINK_MAX_LENGTH,
   buildBountyPayerRecord,
   buildClaimArtifactText,
-  evaluateClaimGate
+  bountyStatusAfter,
+  claimTextWithinLimits,
+  evaluateClaimGate,
+  requiredChannelsForBounty
 } from "../src/lib/bounty-claim-gate.ts";
 
 const BOUNTY = { amountMicros: 50_000_000n, allowedClaimers: [] };
@@ -135,4 +141,67 @@ test("claim -> refuse (not allowed claimer): the gate alone is the check, and it
     { amountAskedMicros: 40_000_000n, claimerSolanaAddress: "someone-else" }
   );
   assert.deepEqual(result, { ok: false, reasonCode: "CLAIMER_NOT_ALLOWED" });
+});
+
+test("an open-bounty claim is held even when both model checks return the same answer", async () => {
+  const tuple = {
+    workOrderId: "bounty-claim:claim-1",
+    amountMicros: 50_000_000n,
+    deliveryTimestamp: "2026-09-27T10:00:00.000Z"
+  };
+  const gonka = async ({ channel }) => ({ channel, tuple });
+  const [artifact, payer] = await Promise.all([
+    gonka({ channel: "artifact" }),
+    gonka({ channel: "payer_record" })
+  ]);
+
+  assert.deepEqual(
+    reconcile(requiredChannelsForBounty(BOUNTY), {
+      artifact: artifact.tuple,
+      payer_record: payer.tuple
+    }),
+    { ok: false, decisionClass: "AMBER", reasonCode: "HUMAN_REVIEW_REQUIRED" }
+  );
+});
+
+test("a bounty stays locked after uncertain outcomes and only reopens after safe refusals", () => {
+  assert.equal(bountyStatusAfter({ status: "settled", reasonCode: null }), "paid");
+  assert.equal(bountyStatusAfter({ status: "held", reasonCode: "HUMAN_REVIEW_REQUIRED" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "QUORUM_SPLIT:amount_micros" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "SETTLEMENT_FAILED" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "CLAIM_OVER_BOUNTY" }), "open");
+});
+
+test("a passed claim atomically changes the bounty from open to paying before work begins", () => {
+  const source = fs.readFileSync("src/lib/bounty-claim.ts", "utf8");
+  const lockAt = source.indexOf("prisma.bounty.updateMany");
+  const workOrderAt = source.indexOf("prisma.workOrder.create");
+  assert.notEqual(lockAt, -1);
+  assert.match(source.slice(lockAt, workOrderAt), /status: "open"[\s\S]*status: "paying"/);
+  assert.ok(lockAt < workOrderAt);
+});
+
+test("claim text is bounded before the claim pipeline can write or call a model", () => {
+  assert.equal(claimTextWithinLimits({
+    workLink: "w".repeat(BOUNTY_WORK_LINK_MAX_LENGTH),
+    summary: "s".repeat(BOUNTY_SUMMARY_MAX_LENGTH)
+  }), true);
+  assert.equal(claimTextWithinLimits({
+    workLink: "w".repeat(BOUNTY_WORK_LINK_MAX_LENGTH + 1),
+    summary: "ok"
+  }), false);
+  assert.equal(claimTextWithinLimits({
+    workLink: "ok",
+    summary: "s".repeat(BOUNTY_SUMMARY_MAX_LENGTH + 1)
+  }), false);
+});
+
+test("the public claim route rate-limits before submitting a claim", () => {
+  const source = fs.readFileSync("src/app/api/v1/bounties/[id]/claims/route.ts", "utf8");
+  const ipLimitAt = source.indexOf("rateLimit(clientIp(request.headers))");
+  const dailyLimitAt = source.indexOf("prisma.bountyClaim.count");
+  const submitAt = source.indexOf("submitBountyClaim(bounty.agent");
+  assert.ok(ipLimitAt !== -1 && ipLimitAt < submitAt);
+  assert.ok(dailyLimitAt !== -1 && dailyLimitAt < submitAt);
+  assert.match(source.slice(dailyLimitAt, submitAt), /claimsInLastDay >= 100/);
 });

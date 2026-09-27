@@ -1,5 +1,5 @@
 import type { GonkaRequest, GonkaResult } from "./gonka.ts";
-import { runGonka } from "./gonka.ts";
+import { CANDIDATES, runGonka } from "./gonka.ts";
 import type { ChannelRead } from "./fool-it.ts";
 import { sandboxChannelRequests } from "./fool-it.ts";
 import { artifactDecisionSchema, payerRecordDecisionSchema } from "./prompts.ts";
@@ -22,7 +22,7 @@ export async function readSandboxChannels(
     gonka({ channel: "payer_record", messages: messages.payer, schema: payerRecordDecisionSchema })
   ]);
   return {
-    artifact: artifactRun.status === "fulfilled" ? artifactRun.value : unavailable("moonshotai/Kimi-K2.6"),
-    payer: payerRun.status === "fulfilled" ? payerRun.value : unavailable("deepseek-ai/DeepSeek-V4-Flash-0731")
+    artifact: artifactRun.status === "fulfilled" ? artifactRun.value : unavailable(CANDIDATES.artifact[0]),
+    payer: payerRun.status === "fulfilled" ? payerRun.value : unavailable(CANDIDATES.payer_record[0])
   };
 }
