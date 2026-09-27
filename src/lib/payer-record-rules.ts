@@ -41,14 +41,36 @@ function digitString(value: unknown): string | null {
   return null;
 }
 
+/**
+ * The payment path JSON.stringifies whatever Prisma returned. A jsonb value that
+ * came back as text is a string here, not an object. Parse that text. Also accept
+ * the already-parsed object.
+ */
+function asRecord(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 2) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("{")) return null;
+    try {
+      return asRecord(JSON.parse(trimmed) as unknown, depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function recordOf(order: ScopedWorkOrder): Record<string, unknown> | null {
   const raw = order.payerRecord !== undefined ? order.payerRecord : order.payer_record;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  return raw as Record<string, unknown>;
+  return asRecord(raw);
 }
 
 function isVerifiedComplete(order: ScopedWorkOrder): boolean {
-  return recordOf(order)?.delivery_status === "verified_complete";
+  const record = recordOf(order);
+  if (!record) return false;
+  const status = "delivery_status" in record ? record.delivery_status : record.deliveryStatus;
+  return status === "verified_complete";
 }
 
 function refOf(order: ScopedWorkOrder): string | null {
@@ -59,7 +81,9 @@ function refOf(order: ScopedWorkOrder): string | null {
 
 function amountOf(order: ScopedWorkOrder): string | null {
   const record = recordOf(order);
-  const approved = record ? digitString(record.approved_amount_micros) : null;
+  const approved = record
+    ? digitString(record.approved_amount_micros) ?? digitString(record.approvedAmountMicros)
+    : null;
   if (approved !== null) return approved;
   return digitString(order.ceilingMicros) ?? digitString(order.ceiling_micros);
 }
