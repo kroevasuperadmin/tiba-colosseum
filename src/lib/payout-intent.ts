@@ -11,7 +11,7 @@ import {
   payerRecordDecisionSchema,
   payerRecordSystemPrompt
 } from "@/lib/prompts";
-import { assertReplayBelongsTo } from "@/lib/payout-guards";
+import { assertReplayBelongsTo, effectiveChannels } from "@/lib/payout-guards";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
 import { committedPendingData, settleCommittedIntent } from "@/lib/payout-settlement";
@@ -255,7 +255,9 @@ export async function processPayoutIntent(
   const channelPolicyWorkOrder = payerTuple
     ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
     : null;
-  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  // The amount rule cannot be turned off: the work order's stored choice can only add strictness.
+  const storedChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  const requiredChannels = payerTuple ? effectiveChannels(storedChannels, payerTuple.amountMicros) : storedChannels;
   // A fallback that left both checks on one maker is recorded. It does not change pay or refuse.
   const sameMaker = sameMakerFallback({
     requiredChannels,
