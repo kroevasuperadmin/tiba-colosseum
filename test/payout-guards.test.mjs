@@ -121,6 +121,28 @@ test("job #379's rate-limit race (S20) is closed: the real write recounts and in
   assert.match(engineSource.slice(lock, lock + 40), /pg_advisory_xact_lock\(\d+\)/);
 });
 
+test("two calls racing on a brand-new idempotency key both get a real intent back, not a raw 500 (gap 2)", () => {
+  // The earlier findUnique can't see a row that doesn't exist yet, so two simultaneous calls
+  // with the same never-before-used key can both reach the insert. Only the database's own
+  // @unique constraint on idempotency_key stops the second one -- this test checks the loser is
+  // then handed the SAME graceful reply an ordinary replay gets, not an unhandled exception.
+  const txTry = engineSource.indexOf("try {\n    intent = await prisma.$transaction");
+  const catchBlock = engineSource.indexOf("} catch (error) {", txTry);
+  assert.ok(txTry > 0 && catchBlock > txTry, "the transaction that inserts the intent must be wrapped in try/catch");
+  const p2002 = engineSource.indexOf('error.code === "P2002"', catchBlock);
+  const scopedToKey = engineSource.indexOf('.includes("idempotency_key")', p2002);
+  const rethrow = engineSource.indexOf("if (!isIdempotencyKeyConflict) throw error;", catchBlock);
+  const refetch = engineSource.indexOf("findUniqueOrThrow({ where: { idempotencyKey: body.idempotency_key } })", rethrow);
+  const ownership = engineSource.indexOf("assertReplayBelongsTo(winner, agent)", refetch);
+  const reply = engineSource.indexOf("return toPublicIntent(winner)", ownership);
+  assert.ok(p2002 > catchBlock, "must check for Prisma's own unique-violation code");
+  assert.ok(scopedToKey > p2002, "must be scoped to the idempotency-key constraint specifically, not any P2002");
+  assert.ok(rethrow > scopedToKey, "an unrelated write failure must still be rethrown, not swallowed");
+  assert.ok(refetch > rethrow, "the winner's own row must be re-read after losing the race");
+  assert.ok(ownership > refetch, "the loser still gets ownership-checked before anything is handed back");
+  assert.ok(reply > ownership, "and gets the same public shape a normal replay gets");
+});
+
 test("workspace creation has a deployment-wide hourly cap read from the database, not a per-instance map", () => {
   assert.equal(workspaceBudgetExceeded(0), false);
   assert.equal(workspaceBudgetExceeded(WORKSPACES_PER_DEPLOYMENT_PER_HOUR - 1), false);
