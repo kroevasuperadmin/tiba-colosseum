@@ -24,6 +24,7 @@
     "a2a:proof": "node scripts/a2a-proof.mjs",
     "recover:x402-signing": "node scripts/recover-stuck-x402-signing.mjs",
     "recover:settlement-pending": "node scripts/recover-stuck-settlement-pending.mjs",
+    "recover:bounty-claims": "node scripts/recover-stuck-bounty-claims.mjs",
     "postinstall": "prisma generate",
     "t3:demo": "node --no-warnings scripts/t3-identity-demo.mjs"
   },
