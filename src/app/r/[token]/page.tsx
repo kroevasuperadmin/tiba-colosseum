@@ -28,15 +28,14 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   const share = receiptShareLines({
     decisionClass: intent.decisionClass,
     amount: microsToUsdc(intent.amountMicros),
+    chain: intent.chain,
     comparison: receiptComparisonFromStored({
       artifact: intent.adjudications.find((row) => row.channel === "artifact") ?? null,
       payerRecord: intent.adjudications.find((row) => row.channel === "payer_record") ?? null
     })
   });
   const title = `${share.outcome} · ${share.amount}`;
-  const description = share.mismatch
-    ? `Solana test network. Mismatch: ${share.mismatch}.`
-    : "Solana test network.";
+  const description = `${share.network}.${share.mismatch ? ` Mismatch: ${share.mismatch}.` : ""}`;
 
   return {
     title: "Receipt - Tiba",
@@ -227,7 +226,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           />
           <Fact
             label="Why"
-            value={explainDecision(intent.decisionClass, intent.reasonCode)}
+            value={explainDecision(intent.decisionClass, intent.reasonCode, intent.chain)}
           />
         </section>
 

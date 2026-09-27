@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { explainDecision } from "../src/app/console/types.ts";
 import {
   GROWTH_LINE,
   growthHref,
@@ -48,13 +49,34 @@ test("refused receipt renders bill, record, and mismatch from stored data", () =
   assert.equal(view.mismatchedField, "work order, amount, and delivery date");
   assert.equal(view.mismatchNote, null);
 
-  const share = receiptShareLines({ decisionClass: "RED", amount: "5.00 USDC", comparison: view });
+  const share = receiptShareLines({
+    decisionClass: "RED",
+    amount: "5.00 USDC",
+    chain: "tempo",
+    comparison: view
+  });
   assert.deepEqual(share, {
     outcome: "REFUSED",
     amount: "5.00 USDC",
-    network: "Solana test network",
+    network: "Tempo testnet",
     mismatch: "work order, amount, and delivery date"
   });
+});
+
+test("share lines and decision copy identify a simulated payment without claiming a transfer", () => {
+  const comparison = receiptComparisonFromStored({ artifact: bill, payerRecord: bill });
+  const share = receiptShareLines({
+    decisionClass: "PAID",
+    amount: "5.00 USDC",
+    chain: "mock",
+    comparison
+  });
+
+  assert.equal(share.network, "Simulated, no transfer");
+  assert.equal(
+    explainDecision("PAID", null, "mock"),
+    "Both checks agreed and the limits passed. Simulated: nothing was sent."
+  );
 });
 
 test("a channel that did not run says so", () => {
