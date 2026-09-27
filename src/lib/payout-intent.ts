@@ -16,6 +16,7 @@ import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reco
 import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
 import { solanaExplorerTxUrl } from "@/lib/rails/solana";
 import { replenishDemoWorkOrder } from "@/lib/demo-replenish";
+import { X402_NEEDS_LIVE_WALLET } from "@/lib/x402/gate";
 import type { SettlementResponse } from "@/lib/x402/types";
 
 export type PublicIntent = {
@@ -190,6 +191,18 @@ export async function processPayoutIntent(
     return toPublicIntent(denied);
   }
   const chain = settledChain(agent.rail, target.chain);
+
+  // An x402 authorization is only ever signed with Solana devnet USDC from the treasury. A
+  // workspace that settles anywhere else (practice wallet, MOCK_SETTLEMENT, RAIL=tempo) is
+  // refused here, before the checks run and before anything counts against its limits.
+  if (settlement === "defer" && chain !== "solana") {
+    const pricing = await pricingData();
+    const denied = await prisma.payoutIntent.update({
+      where: { id: intent.id },
+      data: { status: "refused", decisionClass: "RED", reasonCode: X402_NEEDS_LIVE_WALLET, ...pricing }
+    });
+    return toPublicIntent(denied);
+  }
 
   const artifactMessages: GonkaMessage[] = [
     { role: "system", content: artifactSystemPrompt },
