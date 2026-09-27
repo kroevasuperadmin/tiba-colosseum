@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { parseUsdcToMicros } from "@/lib/money";
 import { submitBountyClaim } from "@/lib/bounty-claim";
+import { claimTextWithinLimits } from "@/lib/bounty-claim-gate";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -68,6 +70,25 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     amountAskedMicros === null || amountAskedMicros <= 0n
   ) {
     return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+  }
+
+  if (!claimTextWithinLimits({ workLink: body.work_link, summary: body.summary })) {
+    return NextResponse.json({ error: "INVALID_REQUEST" }, { status: 400 });
+  }
+
+  const limited = rateLimit(clientIp(request.headers));
+  if (!limited.ok) {
+    return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
+  }
+
+  const claimsInLastDay = await prisma.bountyClaim.count({
+    where: {
+      bountyId: bounty.id,
+      createdAt: { gte: new Date(Date.now() - 86_400_000) }
+    }
+  });
+  if (claimsInLastDay >= 100) {
+    return NextResponse.json({ error: "RATE_LIMITED" }, { status: 429 });
   }
 
   const { claimId, intent } = await submitBountyClaim(bounty.agent, bounty, {

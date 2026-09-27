@@ -3,7 +3,21 @@ export interface PayoutRequest {
   amountMicros: bigint;
   intentId: string;
   coinType?: string;
+  /**
+   * Called with the transaction id after signing and before broadcast, so the caller can store
+   * it first. If it throws, the rail must not broadcast.
+   */
+  onSigned?: (signature: string) => Promise<void> | void;
 }
+
+/**
+ * What a rail failure proves about the money.
+ * - "not_sent": nothing was broadcast (bad key, bad address, RPC unreachable before sending).
+ * - "rejected": the chain itself reported the transaction failed or its blockhash expired unseen.
+ * - "unknown": a broadcast may have happened and the outcome is not known (timeout, RPC split,
+ *   send threw). Callers must treat the transfer as possibly landed.
+ */
+export type PayoutOutcome = "not_sent" | "rejected" | "unknown";
 
 export interface PayoutReceipt {
   digest: string;
@@ -34,16 +48,35 @@ export type PayoutRailErrorCode =
 
 export class PayoutRailError extends Error {
   readonly code: PayoutRailErrorCode;
+  /** Defaults to "unknown": a rail that has not said otherwise may have moved the money. */
+  readonly outcome: PayoutOutcome;
 
-  constructor(code: PayoutRailErrorCode, message: string, options?: { cause?: unknown }) {
-    super(message, options);
+  constructor(code: PayoutRailErrorCode, message: string, options?: { cause?: unknown; outcome?: PayoutOutcome }) {
+    super(message, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "PayoutRailError";
     this.code = code;
+    this.outcome = options?.outcome ?? "unknown";
   }
 }
 
 export function isPayoutRailError(error: unknown): error is PayoutRailError {
   return error instanceof PayoutRailError;
+}
+
+/** Re-label an error thrown before any broadcast so callers know nothing was sent. */
+export function notSent(error: unknown, fallbackCode: PayoutRailErrorCode): PayoutRailError {
+  if (isPayoutRailError(error)) {
+    return new PayoutRailError(error.code, error.message, { cause: error.cause, outcome: "not_sent" });
+  }
+  return new PayoutRailError(fallbackCode, "Settlement failed before anything was sent.", { cause: error, outcome: "not_sent" });
+}
+
+/**
+ * True only when the rail has proven the transfer did not and cannot happen. Everything else,
+ * including plain Errors, is treated as "the money may have moved".
+ */
+export function settlementProvenFailed(error: unknown): boolean {
+  return isPayoutRailError(error) && (error.outcome === "not_sent" || error.outcome === "rejected");
 }
 
 export type Chain = "solana" | "tempo";
