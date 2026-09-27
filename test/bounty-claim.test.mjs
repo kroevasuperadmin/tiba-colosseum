@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import { evaluateBeforeDebit } from "../src/lib/policy.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 import {
   buildBountyPayerRecord,
   buildClaimArtifactText,
-  evaluateClaimGate
+  bountyStatusAfter,
+  evaluateClaimGate,
+  requiredChannelsForBounty
 } from "../src/lib/bounty-claim-gate.ts";
 
 const BOUNTY = { amountMicros: 50_000_000n, allowedClaimers: [] };
@@ -135,4 +138,42 @@ test("claim -> refuse (not allowed claimer): the gate alone is the check, and it
     { amountAskedMicros: 40_000_000n, claimerSolanaAddress: "someone-else" }
   );
   assert.deepEqual(result, { ok: false, reasonCode: "CLAIMER_NOT_ALLOWED" });
+});
+
+test("an open-bounty claim is held even when both model checks return the same answer", async () => {
+  const tuple = {
+    workOrderId: "bounty-claim:claim-1",
+    amountMicros: 50_000_000n,
+    deliveryTimestamp: "2026-09-27T10:00:00.000Z"
+  };
+  const gonka = async ({ channel }) => ({ channel, tuple });
+  const [artifact, payer] = await Promise.all([
+    gonka({ channel: "artifact" }),
+    gonka({ channel: "payer_record" })
+  ]);
+
+  assert.deepEqual(
+    reconcile(requiredChannelsForBounty(BOUNTY), {
+      artifact: artifact.tuple,
+      payer_record: payer.tuple
+    }),
+    { ok: false, decisionClass: "AMBER", reasonCode: "HUMAN_REVIEW_REQUIRED" }
+  );
+});
+
+test("a bounty stays locked after uncertain outcomes and only reopens after safe refusals", () => {
+  assert.equal(bountyStatusAfter({ status: "settled", reasonCode: null }), "paid");
+  assert.equal(bountyStatusAfter({ status: "held", reasonCode: "HUMAN_REVIEW_REQUIRED" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "QUORUM_SPLIT:amount_micros" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "SETTLEMENT_FAILED" }), "paying");
+  assert.equal(bountyStatusAfter({ status: "refused", reasonCode: "CLAIM_OVER_BOUNTY" }), "open");
+});
+
+test("a passed claim atomically changes the bounty from open to paying before work begins", () => {
+  const source = fs.readFileSync("src/lib/bounty-claim.ts", "utf8");
+  const lockAt = source.indexOf("prisma.bounty.updateMany");
+  const workOrderAt = source.indexOf("prisma.workOrder.create");
+  assert.notEqual(lockAt, -1);
+  assert.match(source.slice(lockAt, workOrderAt), /status: "open"[\s\S]*status: "paying"/);
+  assert.ok(lockAt < workOrderAt);
 });
