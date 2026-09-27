@@ -8,9 +8,9 @@ export const revalidate = 60;
 export const dynamic = "force-static";
 
 export const metadata = {
-  title: "Every check — Tiba",
+  title: "Every demo check — Tiba",
   description:
-    "Every public receipt, paid or refused. Test network only — no real money."
+    "Every demo receipt, paid or refused. Test network only — no real money."
 };
 
 const PILL: Record<WallOutcome, string> = {
@@ -28,15 +28,16 @@ export default async function WallPage() {
       <div className="mx-auto flex max-w-5xl flex-col gap-10 px-4 py-8 md:px-6 lg:px-8">
         <header>
           <p className="eyebrow">Public record · test network</p>
-          <h1 className="display-l mt-2">Every check, paid or refused</h1>
+          <h1 className="display-l mt-2">Every check in the demo, paid or refused</h1>
           <p className="lede mt-4">
             Each row is a receipt that was already public by its link. Test money only — nothing here is real money.
           </p>
         </header>
 
-        <section className="grid grid-cols-2 gap-8 border-t border-line pt-8 md:grid-cols-4" aria-label="Running totals">
+        <section className="grid grid-cols-2 gap-8 border-t border-line pt-8 md:grid-cols-5" aria-label="Running totals">
           <Total value={String(wall.checksRun)} label="checks run" />
           <Total value={String(wall.paid)} label="paid" />
+          <Total value={String(wall.simulatedPaid)} label="simulated, nothing sent" />
           <Total value={String(wall.refused)} label="refused" />
           <Total
             value={wall.refusedAmount ?? "refusals so far asked for nothing"}

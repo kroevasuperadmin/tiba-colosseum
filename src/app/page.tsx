@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { microsToUsdc } from "@/lib/money";
 import { BillRecordMismatch } from "@/components/bill-record-mismatch";
 import { homepageRefusedCard } from "@/lib/receipt-comparison";
+import { EXAMPLE_PAID_INTENT_ID } from "@/lib/public-demo";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tiba — the check before an agent's payment goes out" };
@@ -12,10 +13,6 @@ export const metadata = { title: "Tiba — the check before an agent's payment g
 function requestIdFor(adjudications: Array<{ channel: string; requestId: string | null }>, channel: string): string {
   return adjudications.find((row) => row.channel === channel)?.requestId ?? "missing";
 }
-
-// Pinned to the 11 Sep devnet payout of 0.01 USDC to recipient sol-test-0911. The newest PAID row
-// was a treasury self-pay test that moved the money back into the payer's own account.
-const EXAMPLE_PAID_INTENT_ID = "0e4d1636-dad4-4369-8fde-1e4d1fa57fc3";
 
 export default async function Home() {
   const [paidIntent, refusedIntent] = await Promise.all([

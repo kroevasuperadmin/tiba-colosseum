@@ -3,7 +3,14 @@
 // that calls these lives in bounty-claim.ts.
 import { microsToUsdc } from "./money.ts";
 
-export type ClaimGateReason = "INVALID_AMOUNT" | "CLAIM_OVER_BOUNTY" | "CLAIMER_NOT_ALLOWED";
+export const BOUNTY_WORK_LINK_MAX_LENGTH = 2_048;
+export const BOUNTY_SUMMARY_MAX_LENGTH = 8_000;
+
+export type ClaimGateReason =
+  | "INVALID_AMOUNT"
+  | "CLAIM_OVER_BOUNTY"
+  | "CLAIMER_NOT_ALLOWED"
+  | "BOUNTY_CLOSED";
 
 export type ClaimGateResult = { ok: true } | { ok: false; reasonCode: ClaimGateReason };
 
@@ -15,6 +22,38 @@ export interface ClaimInput {
 export interface BountyForGate {
   amountMicros: bigint;
   allowedClaimers: string[];
+}
+
+export function claimTextWithinLimits(input: {
+  workLink: string;
+  summary: string;
+}): boolean {
+  return (
+    input.workLink.length <= BOUNTY_WORK_LINK_MAX_LENGTH &&
+    input.summary.length <= BOUNTY_SUMMARY_MAX_LENGTH
+  );
+}
+
+export function requiredChannelsForBounty(
+  bounty: Pick<BountyForGate, "allowedClaimers">
+): "both" | "human" {
+  return bounty.allowedClaimers.length > 0 ? "both" : "human";
+}
+
+export function bountyStatusAfter(input: {
+  status: string;
+  reasonCode: string | null;
+}): "paid" | "open" | "paying" {
+  if (input.status === "settled") return "paid";
+  const reason = input.reasonCode ?? "";
+  if (
+    input.status === "refused" &&
+    reason !== "SETTLEMENT_FAILED" &&
+    !reason.startsWith("QUORUM_SPLIT")
+  ) {
+    return "open";
+  }
+  return "paying";
 }
 
 /**
