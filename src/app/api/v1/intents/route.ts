@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { IDEMPOTENCY_KEY_IN_USE } from "@/lib/payout-guards";
 import { processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 
 export const runtime = "nodejs";
@@ -64,6 +65,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "RECIPIENT_NOT_FOUND") {
       return NextResponse.json({ error: "RECIPIENT_NOT_FOUND" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === IDEMPOTENCY_KEY_IN_USE) {
+      return NextResponse.json({ error: IDEMPOTENCY_KEY_IN_USE }, { status: 409 });
     }
     console.error("[intents] processing failed:", error);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });

@@ -11,6 +11,7 @@ import {
   payerRecordDecisionSchema,
   payerRecordSystemPrompt
 } from "@/lib/prompts";
+import { assertReplayBelongsTo } from "@/lib/payout-guards";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
 import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
@@ -131,7 +132,11 @@ export async function processPayoutIntent(
   const gonka = options.gonka ?? runGonka;
   const settlement = options.settlement ?? "rail";
   const existing = await prisma.payoutIntent.findUnique({ where: { idempotencyKey: body.idempotency_key } });
-  if (existing) return toPublicIntent(existing);
+  if (existing) {
+    // Another workspace's key: refuse, and never hand back that workspace's intent or receipt token.
+    assertReplayBelongsTo(existing, agent);
+    return toPublicIntent(existing);
+  }
 
   // Only this workspace's recipients, and through them only its own open invoices.
   const recipient = await prisma.recipient.findFirst({ where: { ref: body.recipient_ref, agentId: agent.id } });
