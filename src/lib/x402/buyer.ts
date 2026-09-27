@@ -23,6 +23,11 @@ export type X402Obligation = { recipientRef: string; workOrderRef: string };
 export type X402BuyerDeps = {
   fetch: typeof fetch;
   authorize: (agent: X402Agent, body: X402AuthorizeBody) => Promise<PublicX402Intent>;
+  /**
+   * Atomically mark the intent as being signed. Must return true exactly once per intent
+   * (a conditional update whose row count is 1), so a retried or parallel call never signs again.
+   */
+  claimSignature: (intentId: string) => Promise<boolean>;
   signPayment: (accepted: PaymentRequirements) => Promise<string>;
   recordSettlement: (intentId: string, settlement: SettlementResponse) => Promise<PublicX402Intent>;
   ensureObligation: (
@@ -116,6 +121,16 @@ export async function payX402Resource(
     return { kind: "refused", intent };
   }
 
+  // The engine returns the stored intent for a repeated idempotency key without re-running the
+  // checks or the limits. So the signature must be bound to what that intent cleared: the same
+  // amount, and at most one signature ever.
+  if (!intent.amountMicros || !/^\d+$/.test(intent.amountMicros) || BigInt(accepted.amount) !== BigInt(intent.amountMicros)) {
+    return { kind: "refused", intent, error: "X402_AMOUNT_MISMATCH" };
+  }
+  if (!(await deps.claimSignature(intent.id))) {
+    return { kind: "refused", intent, error: "X402_ALREADY_SIGNED" };
+  }
+
   const transaction = await deps.signPayment(accepted);
   const retryHeaders: Record<string, string> = {
     ...(input.headers ?? {}),
@@ -131,7 +146,19 @@ export async function payX402Resource(
     retryInit.body = input.body;
   }
 
-  const second = await deps.fetch(input.url, retryInit);
+  let second: Response;
+  try {
+    second = await deps.fetch(input.url, retryInit);
+  } catch {
+    // A signature has left the building. The intent stays pending, never open for a second one.
+    const recorded = await deps.recordSettlement(intent.id, {
+      success: false,
+      errorReason: "settlement_pending",
+      transaction: "",
+      network: accepted.network
+    });
+    return { kind: "error", error: "X402_SELLER_UNREACHABLE", intent: recorded };
+  }
   let settlement: SettlementResponse;
   try {
     settlement = decodeSettlementResponse(second.headers.get("PAYMENT-RESPONSE"));

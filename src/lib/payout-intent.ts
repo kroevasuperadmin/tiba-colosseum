@@ -31,6 +31,8 @@ export type PublicIntent = {
   /** Same value as digest: the transaction id on whichever chain settled. */
   signature: string | null;
   x402Routed: boolean;
+  /** Amount (micros) the checks cleared and the debit counted. Null until the checks agree. */
+  amountMicros?: string | null;
 };
 
 type IntentBody = {
@@ -59,6 +61,7 @@ function toPublicIntent(intent: {
   publicToken: string;
   chain: string | null;
   x402Routed?: boolean;
+  amountMicros?: bigint | null;
 }): PublicIntent {
   return {
     id: intent.id,
@@ -70,7 +73,8 @@ function toPublicIntent(intent: {
     publicToken: intent.publicToken,
     chain: intent.chain,
     signature: intent.digest,
-    x402Routed: intent.x402Routed === true
+    x402Routed: intent.x402Routed === true,
+    amountMicros: intent.amountMicros != null ? intent.amountMicros.toString() : null
   };
 }
 
