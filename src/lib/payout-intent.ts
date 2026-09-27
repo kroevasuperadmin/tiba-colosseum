@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { Agent, Prisma } from "@prisma/client";
+import { Prisma, type Agent } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getGnkUsdRate } from "@/lib/gonka-pricing";
 import { CANDIDATES, runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
@@ -184,31 +184,48 @@ export async function processPayoutIntent(
   // and the write can slip through: a fixed lock key serializes intent creation
   // deployment-wide, which is what closes the deployment-wide half of the cap, not just the
   // per-workspace half.
-  const intent = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(872341)`;
-    const since = new Date(now.getTime() - 60 * 60 * 1000);
-    const [mine, all] = await Promise.all([
-      tx.payoutIntent.count({ where: { agentId: agent.id, createdAt: { gte: since } } }),
-      tx.payoutIntent.count({ where: { createdAt: { gte: since } } })
-    ]);
-    if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);
-    return tx.payoutIntent.create({
-      data: {
-        agentId: agent.id,
-        recipientId: recipient.id,
-        status: "processing",
-        decisionClass: "AMBER",
-        idempotencyKey: body.idempotency_key,
-        publicToken: randomUUID(),
-        artifact: {
-          create: {
-            rawText: body.artifact,
-            sha256: hash(body.artifact)
+  let intent;
+  try {
+    intent = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(872341)`;
+      const since = new Date(now.getTime() - 60 * 60 * 1000);
+      const [mine, all] = await Promise.all([
+        tx.payoutIntent.count({ where: { agentId: agent.id, createdAt: { gte: since } } }),
+        tx.payoutIntent.count({ where: { createdAt: { gte: since } } })
+      ]);
+      if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);
+      return tx.payoutIntent.create({
+        data: {
+          agentId: agent.id,
+          recipientId: recipient.id,
+          status: "processing",
+          decisionClass: "AMBER",
+          idempotencyKey: body.idempotency_key,
+          publicToken: randomUUID(),
+          artifact: {
+            create: {
+              rawText: body.artifact,
+              sha256: hash(body.artifact)
+            }
           }
         }
-      }
+      });
     });
-  });
+  } catch (error) {
+    // Two calls with the same brand-new idempotency key can both pass the earlier findUnique
+    // (neither had a row yet) and both reach this insert; only one @unique constraint lets one
+    // through. Without this catch the loser threw a raw 500 instead of the same graceful reply
+    // an ordinary replay gets (job #379's review, REVIEW_PR31.md, gap 2). Scoped to exactly that
+    // constraint, so an unrelated write failure still surfaces as a real error.
+    const isIdempotencyKeyConflict =
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      (error.meta?.target as string[] | string | undefined)?.toString().includes("idempotency_key");
+    if (!isIdempotencyKeyConflict) throw error;
+    const winner = await prisma.payoutIntent.findUniqueOrThrow({ where: { idempotencyKey: body.idempotency_key } });
+    assertReplayBelongsTo(winner, agent);
+    return toPublicIntent(winner);
+  }
 
   if (openWorkOrders.length === 0) {
     const pricing = await pricingData();
