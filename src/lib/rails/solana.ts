@@ -1,4 +1,11 @@
-import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  Transaction,
+  TransactionExpiredBlockheightExceededError,
+  TransactionInstruction
+} from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
@@ -6,7 +13,8 @@ import {
   getAssociatedTokenAddressSync,
   TokenAccountNotFoundError
 } from "@solana/spl-token";
-import { PayoutRailError, type PayoutRail, type PayoutReceipt, type PayoutRequest } from "./index.ts";
+import { encodeBase58 } from "./base58.ts";
+import { notSent, PayoutRailError, type PayoutRail, type PayoutReceipt, type PayoutRequest } from "./index.ts";
 
 // Circle's devnet USDC. transferChecked makes the chain reject the payout if the mint's decimals differ.
 export const SOLANA_USDC_DEVNET_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
@@ -66,29 +74,52 @@ export function quorumOutcome(primary: RpcSignatureStatus, witness: RpcSignature
   return "pending";
 }
 
+/**
+ * Both endpoints must confirm. What each failure proves is on the error's `outcome`:
+ * - both report an error: "rejected" (the chain refused it);
+ * - the blockhash expired and neither endpoint has ever seen it: "rejected" (it can no longer land);
+ * - a split, or a timeout while either endpoint may still see it: "unknown" (it may have landed).
+ */
 export async function confirmPayoutQuorum(
   signature: string,
   readStatus: (which: "primary" | "witness") => Promise<RpcSignatureStatus>,
-  options?: { polls?: number; sleep?: (ms: number) => Promise<void> }
+  options?: { polls?: number; sleep?: (ms: number) => Promise<void>; blockhashExpired?: () => boolean }
 ): Promise<void> {
   const polls = options?.polls ?? QUORUM_POLLS;
   const sleep = options?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  let lastPrimary: RpcSignatureStatus = null;
+  let lastWitness: RpcSignatureStatus = null;
   for (let attempt = 0; attempt < polls; attempt += 1) {
     const [primary, witness] = await Promise.all([readStatus("primary"), readStatus("witness")]);
+    lastPrimary = primary;
+    lastWitness = witness;
     const outcome = quorumOutcome(primary, witness);
     if (outcome === "confirmed") return;
     if (outcome === "split") {
       throw new PayoutRailError(
         "SOLANA_RPC_QUORUM_FAILED",
-        `Solana RPC endpoints disagreed on transaction ${signature}. The payout was not recorded as paid.`
+        `Solana RPC endpoints disagreed on transaction ${signature}. The payout was not recorded as paid.`,
+        { outcome: "unknown" }
       );
     }
     if (outcome === "rejected") {
-      throw new PayoutRailError("SOLANA_EXECUTION_FAILED", `Solana transaction ${signature} was rejected.`);
+      throw new PayoutRailError("SOLANA_EXECUTION_FAILED", `Solana transaction ${signature} was rejected.`, { outcome: "rejected" });
     }
     if (attempt < polls - 1) await sleep(QUORUM_POLL_MS);
   }
-  throw new PayoutRailError("SOLANA_EXECUTION_FAILED", `Solana transaction ${signature} did not confirm on both RPC endpoints.`);
+  const neverSeen = lastPrimary === null && lastWitness === null;
+  if (neverSeen && options?.blockhashExpired?.()) {
+    throw new PayoutRailError(
+      "SOLANA_EXECUTION_FAILED",
+      `Solana transaction ${signature} expired before either RPC endpoint saw it.`,
+      { outcome: "rejected" }
+    );
+  }
+  throw new PayoutRailError(
+    "SOLANA_EXECUTION_FAILED",
+    `Solana transaction ${signature} did not confirm on both RPC endpoints.`,
+    { outcome: "unknown" }
+  );
 }
 
 function envValue(name: string): string | undefined {
@@ -120,7 +151,8 @@ export function isSolanaAddress(value: string): boolean {
 
 export function solanaExplorerTxUrl(signature: string): string {
   const base = (envValue("SOLANA_EXPLORER_BASE") ?? "https://explorer.solana.com").replace(/\/$/, "");
-  return `${base}/tx/${signature}?cluster=devnet`;
+  // Callers pass ids they produced or already validated as base58; encoding keeps a stray one inert.
+  return `${base}/tx/${encodeURIComponent(signature)}?cluster=devnet`;
 }
 
 export function solanaPayerKeypair(): Keypair {
@@ -226,31 +258,61 @@ async function readSignatureStatus(connection: Connection, signature: string): P
   }
 }
 
-async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
-  const keypair = keypairFromEnv();
-  const { primary, witness } = solanaRpcEndpoints();
-  if (!rpcEndpointsAreIndependent(primary, witness)) {
-    throw new PayoutRailError(
-      "SOLANA_RPC_QUORUM_FAILED",
-      "Solana payout confirmation needs two different RPC endpoints. Set SOLANA_RPC_URL_2 to a second devnet node."
-    );
-  }
-  const tx = buildSolanaPayoutTransaction(requests, keypair.publicKey);
-  const intentIds = requests.map((request) => request.intentId).join(",");
-  const connection = new Connection(primary, "confirmed");
-  const witnessConnection = new Connection(witness, "confirmed");
-  const sendFailed = (error: unknown): never => {
-    throw new PayoutRailError("SOLANA_EXECUTION_FAILED", "Solana transaction could not be sent.", { cause: error });
-  };
+/** Transaction id of a signed legacy transaction: its first (fee payer's) signature, base58. */
+export function signedTransactionId(tx: Transaction): string {
+  if (!tx.signature) throw new PayoutRailError("SOLANA_EXECUTION_FAILED", "Transaction is not signed.", { outcome: "not_sent" });
+  return encodeBase58(tx.signature);
+}
 
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed").catch(sendFailed);
-  tx.recentBlockhash = blockhash;
-  tx.lastValidBlockHeight = lastValidBlockHeight;
-  tx.feePayer = keypair.publicKey;
-  tx.sign(keypair);
-  const signature = await connection.sendRawTransaction(tx.serialize()).catch(sendFailed);
+async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
+  const intentIds = requests.map((request) => request.intentId).join(",");
+  let connection: Connection;
+  let witnessConnection: Connection;
+  let signature: string;
+  let raw: Buffer;
+  let blockhash: string;
+  let lastValidBlockHeight: number;
+
+  // Everything up to the broadcast. A failure here proves nothing was sent.
+  try {
+    const keypair = keypairFromEnv();
+    const { primary, witness } = solanaRpcEndpoints();
+    if (!rpcEndpointsAreIndependent(primary, witness)) {
+      throw new PayoutRailError(
+        "SOLANA_RPC_QUORUM_FAILED",
+        "Solana payout confirmation needs two different RPC endpoints. Set SOLANA_RPC_URL_2 to a second devnet node."
+      );
+    }
+    const tx = buildSolanaPayoutTransaction(requests, keypair.publicKey);
+    connection = new Connection(primary, "confirmed");
+    witnessConnection = new Connection(witness, "confirmed");
+
+    ({ blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed"));
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = keypair.publicKey;
+    tx.sign(keypair);
+    signature = signedTransactionId(tx);
+    raw = tx.serialize();
+
+    // The caller stores the id before anything is broadcast, so a transfer can never exist
+    // without a record that names it. If storing fails, nothing is sent.
+    for (const request of requests) {
+      if (request.onSigned) await request.onSigned(signature);
+    }
+  } catch (error) {
+    throw notSent(error, "SOLANA_EXECUTION_FAILED");
+  }
+
+  try {
+    await connection.sendRawTransaction(raw);
+  } catch (error) {
+    // The request may have reached the node before the error came back. Not proof of anything.
+    throw new PayoutRailError("SOLANA_EXECUTION_FAILED", "Solana transaction could not be sent.", { cause: error, outcome: "unknown" });
+  }
 
   const receipt = { digest: signature, explorerUrl: solanaExplorerTxUrl(signature) };
+  let blockhashExpired = false;
   try {
     const result = await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
     if (result.value.err) {
@@ -259,10 +321,15 @@ async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
   } catch (error) {
     // The transaction may have landed even though confirmation threw (blockhash expiry). The witness
     // read below is what decides whether both endpoints agree it confirmed.
+    blockhashExpired = error instanceof TransactionExpiredBlockheightExceededError;
     console.error(`[solana-rail] primary confirmation threw for intent ${intentIds}, signature ${signature}`, error);
   }
 
-  await confirmPayoutQuorum(signature, (which) => readSignatureStatus(which === "primary" ? connection : witnessConnection, signature));
+  await confirmPayoutQuorum(
+    signature,
+    (which) => readSignatureStatus(which === "primary" ? connection : witnessConnection, signature),
+    { blockhashExpired: () => blockhashExpired }
+  );
   return receipt;
 }
 

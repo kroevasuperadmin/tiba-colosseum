@@ -57,8 +57,15 @@ export function decisionSentence(decisionClass: string): string {
   return decisionClass;
 }
 
-export function explainDecision(decisionClass: string, reasonCode: string | null): string {
+export function explainDecision(
+  decisionClass: string,
+  reasonCode: string | null,
+  chain?: string | null
+): string {
   if (decisionClass === "PAID") {
+    if (chain === "mock") {
+      return "Both checks agreed and the limits passed. Simulated: nothing was sent.";
+    }
     return "Both checks agreed, the limits passed, and the test transfer completed.";
   }
 
