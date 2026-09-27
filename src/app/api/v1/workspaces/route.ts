@@ -25,7 +25,8 @@ export async function POST(request: NextRequest) {
   if (!isSolanaAddress(solanaAddress)) return NextResponse.json({ error: "INVALID_SOLANA_ADDRESS" }, { status: 400 });
   // Anonymous sign-ups settle on the simulated rail; signed-in ones on Solana devnet within the caps.
   // ponytail: count-then-create is not atomic, so simultaneous sign-ups can pass a cap by a few
-  // (they are still rate limited). Take a Postgres advisory lock if that ever matters.
+  // (they are still rate limited). If that ever matters, take pg_advisory_xact_lock inside the
+  // create transaction. A session lock would not survive the transaction pooler.
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   // Deployment-wide, from the database: the per-IP limiter above only counts on one instance.
   const createdLastHour = await prisma.agent.count({ where: { createdAt: { gte: new Date(Date.now() - 60 * 60 * 1000) } } });
