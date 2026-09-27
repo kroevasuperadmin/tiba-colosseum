@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { IDEMPOTENCY_KEY_IN_USE } from "@/lib/payout-guards";
 import { finalizeX402Settlement, processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 import { payX402Resource } from "@/lib/x402/buyer";
 import { x402RailRefusal } from "@/lib/x402/gate";
@@ -132,6 +133,9 @@ export async function POST(request: NextRequest) {
     }
     if (error instanceof Error && error.message === X402_URL_NOT_ALLOWED) {
       return NextResponse.json({ error: X402_URL_NOT_ALLOWED }, { status: 400 });
+    }
+    if (error instanceof Error && error.message === IDEMPOTENCY_KEY_IN_USE) {
+      return NextResponse.json({ error: IDEMPOTENCY_KEY_IN_USE }, { status: 409 });
     }
     console.error("[x402] buyer failed:", error);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });
