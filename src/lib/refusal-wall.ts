@@ -198,6 +198,11 @@ export function isSimulatedSettlement(chain: string | null): boolean {
   return chain === "mock" || chain === "sandbox" || chain === null;
 }
 
+// The Sui rail was retired on 11 Sep 2026: its old rows stay on the wall without naming it.
+function wallNetwork(rawChain: string | null): string {
+  return rawChain === "sui" ? "Earlier test network, retired" : receiptNetwork(rawChain);
+}
+
 function prepare(input: unknown): Prepared | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const row = input as Record<string, unknown>;
@@ -218,7 +223,7 @@ function prepare(input: unknown): Prepared | null {
     outcome: outcome.outcome,
     outcomeLabel: outcome.outcomeLabel,
     amount: microsToUsdc(micros),
-    chain: receiptNetwork(rawChain),
+    chain: wallNetwork(rawChain),
     time: formatWallTime(at),
     timeIso: at.toISOString(),
     href: `/r/${token}`,
