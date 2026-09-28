@@ -268,3 +268,14 @@ test("the only new site link to the wall is the footer", () => {
   assert.equal(header.includes("/wall"), false);
   assert.equal(home.includes("/wall"), false);
 });
+
+test("legacy Sui rows stay on the wall but the wall never says Sui", () => {
+  const wall = buildRefusalWall([
+    receipt({ chain: "sui", publicToken: "22222222-2222-4222-8222-222222222222" }),
+    receipt({ chain: "solana", publicToken: "33333333-3333-4333-8333-333333333333", createdAt: "2026-09-26T09:00:00.000Z" })
+  ]);
+  assert.equal(wall.checksRun, 2);
+  assert.equal(wall.rows[0].chain, "Earlier test network, retired");
+  assert.equal(wall.rows[1].chain, "Solana devnet");
+  assert.equal(/sui/i.test(visibleWallText(wall)), false);
+});
