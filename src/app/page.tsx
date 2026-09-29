@@ -124,26 +124,7 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-line pt-12">
-          <p className="eyebrow">Eval of an earlier build, 29 Aug 2026, on a mock settlement rail. Not live figures.</p>
-          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
-            <div>
-              <p className="num display-l">20 / 20</p>
-              <p className="eyebrow mt-2">honest notes paid</p>
-            </div>
-            <div>
-              <p className="num display-l">10 / 10</p>
-              <p className="eyebrow mt-2">tampered notes refused</p>
-            </div>
-            <div>
-              <p className="num display-l">0 / 20</p>
-              <p className="eyebrow mt-2">false refusals</p>
-            </div>
-            <div>
-              <p className="num display-l">13 s</p>
-              <p className="eyebrow mt-2">mean per decision</p>
-            </div>
-          </div>
-          <p className="lede mt-8 text-sm text-muted">
+          <p className="lede text-sm text-muted">
             18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
             None refuses a wrong bill automatically (one mentions checking invoices, and a person
             still approves). 0 of 17 give a receipt for a refusal.
