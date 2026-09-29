@@ -121,26 +121,7 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-line pt-12">
-          <p className="eyebrow">Eval of an earlier build, 29 Aug 2026, on a mock settlement rail. Not live figures.</p>
-          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
-            <div>
-              <p className="num display-l">20 / 20</p>
-              <p className="eyebrow mt-2">honest notes paid</p>
-            </div>
-            <div>
-              <p className="num display-l">10 / 10</p>
-              <p className="eyebrow mt-2">tampered notes refused</p>
-            </div>
-            <div>
-              <p className="num display-l">0 / 20</p>
-              <p className="eyebrow mt-2">false refusals</p>
-            </div>
-            <div>
-              <p className="num display-l">13 s</p>
-              <p className="eyebrow mt-2">mean per decision</p>
-            </div>
-          </div>
-          <p className="lede mt-8 text-sm text-muted">
+          <p className="lede text-sm text-muted">
             18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
             Of the 18 we compared as of 25 Sep 2026, none offered both a bill check and a public
             receipt for a refusal. Tiba works for any payer and any bill, not one supply chain, and
