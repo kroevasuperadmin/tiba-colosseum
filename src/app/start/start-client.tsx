@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { friendlyStartError } from "@/lib/start-errors";
 import Link from "next/link";
 import { chainName, defaultPublicChain } from "@/app/format";
 
@@ -42,16 +43,16 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, [ADDRESS_KEY]: address.trim() || undefined, ...(signupRef ? { ref: signupRef } : {}) })
       });
-      const payload = await response.json().catch(() => ({ error: "UNKNOWN" })) as { error?: string } & Partial<WorkspaceResult>;
+      const payload = await response.json().catch(() => ({ error: "UNKNOWN" })) as { error?: string; retry_after?: number } & Partial<WorkspaceResult>;
       if (!response.ok) {
-        throw new Error(payload.error ?? `Request failed (${response.status})`);
+        throw new Error(friendlyStartError(payload.error, payload.retry_after));
       }
       setResult(payload as WorkspaceResult);
       if (typeof window !== "undefined") {
         window.sessionStorage.setItem("tiba_operator_token", payload.owner_key as string);
       }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Something went wrong");
+      setError(caught instanceof Error ? caught.message : friendlyStartError(undefined));
     } finally {
       setBusy(false);
     }

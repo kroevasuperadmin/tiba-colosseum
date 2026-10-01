@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { TestIntentResponse } from "./types";
+import { isSimulatedDigest } from "@/lib/receipt-network";
 import {
   decisionWord,
   explainDecision,
@@ -157,7 +158,7 @@ export function SendResult({
             See in activity
           </Link>
         )}
-        {paid && result.explorerUrl && (
+        {paid && result.explorerUrl && !isSimulatedDigest(result.digest) && (
           <a
             href={result.explorerUrl}
             target="_blank"

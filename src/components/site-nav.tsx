@@ -22,7 +22,7 @@ export async function SiteNav({ current }: SiteNavProps) {
           <div className="flex h-14 items-center md:h-auto">
             <Wordmark />
           </div>
-          <div className="site-nav-links -mx-4 flex w-[calc(100%+2rem)] shrink-0 gap-4 overflow-x-auto px-4 pb-3 text-sm md:mx-0 md:w-auto md:gap-6 md:overflow-visible md:px-0 md:pb-0">
+          <div className="site-nav-links -mx-4 flex whitespace-nowrap w-[calc(100%+2rem)] shrink-0 gap-4 overflow-x-auto px-4 pb-3 text-sm md:mx-0 md:w-auto md:gap-6 md:overflow-visible md:px-0 md:pb-0">
             {marketing ? <MarketingLinks current={current} /> : <AppLinks current={current} />}
             <AuthLinks />
           </div>

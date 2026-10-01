@@ -34,3 +34,8 @@ export function coinSymbol(chain: string | null): string {
 export function microsToCoin(micros: bigint | number | string, chain: string | null): string {
   return `${microsToUsdc(micros).replace(/ USDC$/, "")} ${coinSymbol(chain)}`;
 }
+
+/** A simulated payment has a made-up transaction id. It must not link to a block explorer, where it is not found. */
+export function isSimulatedDigest(digest: string | null | undefined): boolean {
+  return typeof digest === "string" && digest.startsWith("mock-testnet");
+}

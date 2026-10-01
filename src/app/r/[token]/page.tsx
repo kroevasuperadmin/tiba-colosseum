@@ -11,7 +11,7 @@ import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
-import { coinSymbol, microsToCoin, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { coinSymbol, microsToCoin, isSimulatedDigest, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 import { limitsStatus } from "@/lib/receipt-status";
 
@@ -175,7 +175,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <h1 className="display-l mt-2">
               {decisionSentence(intent.decisionClass)}
             </h1>
-            {paid ? <p className="mt-2 text-sm text-muted">Paid on {network}.</p> : null}
+            {paid ? <p className="mt-2 text-sm text-muted">{intent.chain === "mock" ? "Paid in a simulation. No transfer was made." : `Paid on ${network}.`}</p> : null}
           </div>
           <div className="card p-4 md:min-w-72">
             <p className="text-sm text-muted">{amountLabel}</p>
@@ -303,7 +303,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
                 <td className="py-3 px-3">Payment</td>
                 <td className="py-3 px-3">{getSettlementStatus(intent.decisionClass, intent.reasonCode)}</td>
                 <td className="py-3 px-3">
-                  {intent.explorerUrl ? (
+                  {intent.explorerUrl && !isSimulatedDigest(intent.digest) ? (
                     <a href={intent.explorerUrl} className="link num break-all text-xs" target="_blank" rel="noopener noreferrer">
                       {intent.digest} — view on the {network}
                     </a>
