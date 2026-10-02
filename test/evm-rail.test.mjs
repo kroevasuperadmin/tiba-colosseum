@@ -9,7 +9,7 @@ import {
   recipientAddressReason,
   settledChain
 } from "../src/lib/rails/index.ts";
-import { prepareTempoPayouts, tempoExplorerTxUrl, tempoRail } from "../src/lib/rails/evm.ts";
+import { executeTempo, prepareTempoPayouts, tempoExplorerTxUrl, tempoRail } from "../src/lib/rails/evm.ts";
 
 const RECIPIENT = `0x${"ab".repeat(20)}`;
 const SOLANA_RECIPIENT = Keypair.generate().publicKey.toBase58();
@@ -126,6 +126,65 @@ describe("tempo rail", { concurrency: false }, () => {
 
     await withEnv({ RAIL: "bitcoin" }, async () => {
       assert.throws(() => configuredRail(), payoutError("UNSUPPORTED_RAIL"));
+    });
+  });
+
+  const KEY = `0x${"11".repeat(32)}`;
+  function fakeClient({ decimals = 6, status = "success", failWrite = false } = {}) {
+    const calls = [];
+    return {
+      calls,
+      async readContract(args) { calls.push(["read", args.functionName]); return decimals; },
+      async writeContract(args) {
+        calls.push(["write", args.functionName, args.args]);
+        if (failWrite) throw new Error("rpc down");
+        return `0x${String(calls.length).padStart(64, "0")}`;
+      },
+      async waitForTransactionReceipt() { return { status }; }
+    };
+  }
+
+  test("a send through a fake RPC makes one plain transfer to the recipient for the exact amount", async () => {
+    await withEnv({ TEMPO_TREASURY_KEY: KEY }, async () => {
+      const client = fakeClient();
+      const receipt = await executeTempo([{ recipientAddress: RECIPIENT, amountMicros: 10_000n, intentId: "t1" }], { client });
+      const writes = client.calls.filter((c) => c[0] === "write");
+      assert.equal(writes.length, 1, "no approve step");
+      assert.equal(writes[0][1], "transfer");
+      assert.equal(writes[0][2][1], 10_000n);
+      assert.equal(writes[0][2][0].toLowerCase(), RECIPIENT);
+      assert.match(receipt.digest, /^0x[0-9a-f]{64}$/);
+      assert.equal(receipt.explorerUrl, `https://explore.testnet.tempo.xyz/tx/${receipt.digest}`);
+    });
+  });
+
+  test("a reverted transfer, a failed send and wrong decimals are errors, not receipts", async () => {
+    await withEnv({ TEMPO_TREASURY_KEY: KEY }, async () => {
+      const req = [{ recipientAddress: RECIPIENT, amountMicros: 1n, intentId: "t2" }];
+      await assert.rejects(() => executeTempo(req, { client: fakeClient({ status: "reverted" }) }), payoutError("TEMPO_EXECUTION_FAILED"));
+      await assert.rejects(() => executeTempo(req, { client: fakeClient({ failWrite: true }) }), payoutError("TEMPO_EXECUTION_FAILED"));
+      const wrong = fakeClient({ decimals: 18 });
+      await assert.rejects(() => executeTempo(req, { client: wrong }), payoutError("INVALID_PAYOUT"));
+      assert.equal(wrong.calls.filter((c) => c[0] === "write").length, 0, "nothing is sent when decimals are wrong");
+    });
+  });
+
+  test("a batch sends one transfer per payout and returns the last one", async () => {
+    await withEnv({ TEMPO_TREASURY_KEY: KEY }, async () => {
+      const client = fakeClient();
+      const receipt = await executeTempo([
+        { recipientAddress: RECIPIENT, amountMicros: 1n, intentId: "b1" },
+        { recipientAddress: RECIPIENT, amountMicros: 2n, intentId: "b2" }
+      ], { client });
+      assert.equal(client.calls.filter((c) => c[0] === "write").length, 2);
+      assert.match(receipt.digest, /^0x[0-9a-f]{64}$/);
+    });
+  });
+
+  test("Tempo stays off unless RAIL=tempo: a Solana address still goes to Solana", async () => {
+    await withEnv({}, async () => {
+      assert.equal(configuredRail(), "solana");
+      assert.equal(chainForRecipient({ solanaAddress: RECIPIENT })?.chain, "solana");
     });
   });
 });

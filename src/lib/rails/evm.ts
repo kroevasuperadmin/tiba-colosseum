@@ -118,7 +118,14 @@ async function confirmed(
   }
 }
 
-async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
+/** The few client calls the rail needs. A test passes a fake; production builds a viem client. */
+export interface TempoClientLike {
+  readContract: (args: any) => Promise<any>;
+  writeContract: (args: any) => Promise<Hash>;
+  waitForTransactionReceipt: (args: { hash: Hash }) => Promise<{ status: string }>;
+}
+
+export async function executeTempo(requests: PayoutRequest[], deps: { client?: TempoClientLike } = {}): Promise<PayoutReceipt> {
   const prepared = prepareTempoPayouts(requests);
   const config = readTempoConfig();
   const account = privateKeyToAccount(config.treasuryKey);
@@ -127,12 +134,11 @@ async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
   }
 
   // Fees are paid in the stablecoin. Tempo has no native gas token.
-  const chain = tempoModerato.extend({ feeToken: config.stablecoin });
-  const client = createClient({
+  const client: TempoClientLike = deps.client ?? (createClient({
     account,
-    chain,
+    chain: tempoModerato.extend({ feeToken: config.stablecoin }),
     transport: http(config.rpcUrl)
-  });
+  }) as unknown as TempoClientLike);
 
   let decimals: number;
   try {
@@ -142,54 +148,43 @@ async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
       functionName: "decimals"
     });
   } catch (error) {
-    throw new PayoutRailError("TEMPO_EXECUTION_FAILED", "Tempo stablecoin decimals could not be read.", { cause: error });
+    throw new PayoutRailError("TEMPO_EXECUTION_FAILED", "Tempo stablecoin decimals could not be read.", { cause: error, outcome: "not_sent" });
   }
   if (decimals !== STABLECOIN_DECIMALS) {
     throw new PayoutRailError(
       "INVALID_PAYOUT",
-      `Tempo stablecoin decimals are ${decimals}; amountMicros requires ${STABLECOIN_DECIMALS}.`
+      `Tempo stablecoin decimals are ${decimals}; amountMicros requires ${STABLECOIN_DECIMALS}.`,
+      { outcome: "not_sent" }
     );
   }
 
-  const total = prepared.reduce((sum, payout) => sum + payout.amount, 0n);
-
+  // One plain TIP-20 transfer per payout (TIP-20 follows the ERC-20 transfer interface), sent
+  // from the treasury account. The earlier approve-then-transferFrom detour is gone: it added a
+  // second transaction and a standing allowance for no benefit.
+  let last: PayoutReceipt | null = null;
   try {
-    // transferFrom spends the treasury's own allowance. Approve the exact total, then pull.
-    const allowance = await client.readContract({
-      address: config.stablecoin,
-      abi: erc20Abi,
-      functionName: "allowance",
-      args: [account.address, account.address]
-    });
-    if (allowance < total) {
-      const approveHash = await client.writeContract({
-        address: config.stablecoin,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [account.address, total]
-      });
-      await confirmed(client, approveHash, "approval");
-    }
-
-    let last: PayoutReceipt | null = null;
     for (const payout of prepared) {
       const hash = await client.writeContract({
         address: config.stablecoin,
         abi: erc20Abi,
-        functionName: "transferFrom",
-        args: [account.address, payout.recipient, payout.amount]
+        functionName: "transfer",
+        args: [payout.recipient, payout.amount]
       });
       await confirmed(client, hash, "transfer");
       last = { digest: hash, explorerUrl: tempoExplorerTxUrl(hash, config.explorerBase) };
     }
-    if (!last) {
-      throw new PayoutRailError("INVALID_PAYOUT", "Batch payout requires at least one payout.");
-    }
-    return last;
   } catch (error) {
     if (error instanceof PayoutRailError) throw error;
     throw new PayoutRailError("TEMPO_EXECUTION_FAILED", "Tempo stablecoin transfer could not be confirmed.", { cause: error });
   }
+  if (!last) {
+    throw new PayoutRailError("INVALID_PAYOUT", "Batch payout requires at least one payout.");
+  }
+  return last;
+}
+
+async function execute(requests: PayoutRequest[]): Promise<PayoutReceipt> {
+  return executeTempo(requests);
 }
 
 export const tempoRail: PayoutRail = {
