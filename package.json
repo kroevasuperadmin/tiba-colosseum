@@ -20,6 +20,7 @@
     "e2e": "node scripts/e2e.mjs",
     "eval": "node scripts/eval.mjs",
     "solana:smoke": "node scripts/solana-smoke.mjs",
+    "anchor:receipt": "node scripts/anchor-receipt.mjs",
     "tempo:smoke": "node scripts/tempo-smoke.mjs",
     "a2a:proof": "node scripts/a2a-proof.mjs",
     "recover:x402-signing": "node scripts/recover-stuck-x402-signing.mjs",

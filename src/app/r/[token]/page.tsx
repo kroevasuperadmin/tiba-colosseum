@@ -14,6 +14,8 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { coinSymbol, microsToCoin, isSimulatedDigest, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 import { limitsStatus } from "@/lib/receipt-status";
+import { canonicalReceiptText, receiptHash } from "@/lib/receipt-hash";
+import { ReceiptProof } from "@/components/receipt-proof";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +60,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
   if (!intent) notFound();
 
+  const artifactRecord = await prisma.artifact.findUnique({ where: { intentId: intent.id }, select: { sha256: true } });
   const bountyClaim = await prisma.bountyClaim.findUnique({
     where: { payoutIntentId: intent.id },
     include: { bounty: true }
@@ -159,6 +162,26 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   const amountValue = unreadAmount
     ? (channelATuple ? channelATuple.amount.replace(/ USDC$/, "") : "Not read")
     : microsToUsdc(intent.amountMicros).replace(/ USDC$/, "");
+
+  const fingerprintInput = {
+    token: intent.publicToken,
+    decisionClass: intent.decisionClass,
+    status: intent.status,
+    reasonCode: intent.reasonCode,
+    amountMicros: intent.amountMicros,
+    chain: intent.chain,
+    digest: intent.digest,
+    createdAt: intent.createdAt,
+    billSha256: artifactRecord?.sha256 ?? null,
+    adjudications: intent.adjudications.map((row) => ({
+      channel: row.channel,
+      model: row.model,
+      promptSha: row.promptSha,
+      responseSha: row.responseSha,
+      tupleJson: row.tupleJson,
+      ok: row.ok
+    }))
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -326,6 +349,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           </table>
           </div>
         </section>
+
+        {intent.decisionClass === "PAID" || intent.decisionClass === "RED" ? (
+          <ReceiptProof
+            canonicalText={canonicalReceiptText(fingerprintInput)}
+            hash={receiptHash(fingerprintInput)}
+          />
+        ) : null}
 
         <p className="text-sm">
           <Link className="link" href={growthHref(intent.publicToken)}>
