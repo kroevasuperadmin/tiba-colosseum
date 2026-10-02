@@ -25,7 +25,7 @@ function shareUrl(shareCode: string): string {
 
 function discordMessage(bounty: BountyPublicData): string {
   return [
-    `📋 **${bounty.title}** — ${microsToUsdc(bounty.amountMicros)}`,
+    `📋 **${bounty.title}**: ${microsToUsdc(bounty.amountMicros)}`,
     bounty.doneCriteria,
     "",
     `Claim it: ${shareUrl(bounty.shareCode)}`

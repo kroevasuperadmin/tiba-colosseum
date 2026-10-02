@@ -8,9 +8,9 @@ export const revalidate = 60;
 export const dynamic = "force-static";
 
 export const metadata = {
-  title: "Every demo check — Tiba",
+  title: "Every demo check | Tiba",
   description:
-    "Every demo receipt, paid or refused. Test network only — no real money."
+    "Every demo receipt, paid or refused. Test network only. No real money."
 };
 
 const PILL: Record<WallOutcome, string> = {
@@ -30,7 +30,7 @@ export default async function WallPage() {
           <p className="eyebrow">Public record · test network</p>
           <h1 className="display-l mt-2">Every check in the demo, paid or refused</h1>
           <p className="lede mt-4">
-            Each row is a receipt that was already public by its link. Test money only — nothing here is real money.
+            Each row is a receipt that was already public by its link. Test money only. Nothing here is real money.
           </p>
         </header>
 

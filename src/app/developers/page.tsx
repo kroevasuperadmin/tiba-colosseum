@@ -6,7 +6,7 @@ import mandateSchema from "@/lib/tiba-standard/schemas/tiba-mandate-v0.1.schema.
 import receiptSchema from "@/lib/tiba-standard/schemas/tiba-receipt-v0.1.schema.json";
 import revocationSchema from "@/lib/tiba-standard/schemas/tiba-revocation-list-v0.1.schema.json";
 
-export const metadata = { title: "Developers — Tiba" };
+export const metadata = { title: "Developers | Tiba" };
 
 const integrations = [
   { name: "AP2", adds: "A cross-protocol policy envelope and signed action receipt.", keeps: "Checkout mandates, credentials, payment receipts, and dispute evidence stay AP2." },
@@ -29,9 +29,9 @@ export default function DevelopersPage() {
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14 lg:px-8">
         <header className="max-w-3xl">
           <p className="eyebrow">Developers</p>
-          <h1 className="display-l mt-2">A portable permission and proof layer for agents.</h1>
+          <h1 className="display-l mt-2">The check before an agent's payment goes out.</h1>
           <p className="mt-4 max-w-[62ch] text-sm leading-6 text-muted md:text-base">
-            Tiba adds a signed permission slip before an agent acts and a signed receipt after it does. It works beside the protocols that already carry the action.
+            Tiba reads the bill against your record before an agent pays, then pays or refuses and leaves a public receipt. It works beside the protocols that already carry the payment.
           </p>
         </header>
 

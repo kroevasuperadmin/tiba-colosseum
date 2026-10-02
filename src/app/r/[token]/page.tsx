@@ -192,8 +192,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           <div>
             <p className="eyebrow">
               {intent.chain === "zcash"
-                ? "Receipt — anyone with the viewing key can check the payment"
-                : "Receipt — anyone with this link can read it"}
+                ? "Receipt. Anyone with the viewing key can check the payment"
+                : "Receipt. Anyone with this link can read it"}
             </p>
             <h1 className="display-l mt-2">
               {decisionSentence(intent.decisionClass)}
@@ -256,7 +256,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             </thead>
             <tbody>
               <tr className="border-b border-line">
-                <td className="py-3 px-3">Check 1 — read the delivery note</td>
+                <td className="py-3 px-3">Check 1: read the delivery note</td>
                 <td className="py-3 px-3">{getChannelMatchStatus(channelATuple, channelBTuple)}</td>
                 <td className="py-3 px-3">
                   {adjudicationsByChannel.get("artifact") ? (
@@ -282,7 +282,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
                 </td>
               </tr>
               <tr className="border-b border-line">
-                <td className="py-3 px-3">Check 2 — read your own records</td>
+                <td className="py-3 px-3">Check 2: read your own records</td>
                 <td className="py-3 px-3">{getChannelMatchStatus(channelBTuple, channelATuple)}</td>
                 <td className="py-3 px-3">
                   {adjudicationsByChannel.get("payer_record") ? (
@@ -328,7 +328,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
                 <td className="py-3 px-3">
                   {intent.explorerUrl && !isSimulatedDigest(intent.digest) ? (
                     <a href={intent.explorerUrl} className="link num break-all text-xs" target="_blank" rel="noopener noreferrer">
-                      {intent.digest} — view on the {network}
+                      {intent.digest} (view on the {network})
                     </a>
                   ) : (
                     "No transfer happened, so there is no transaction record."

@@ -8,7 +8,7 @@ import { homepageRefusedCard } from "@/lib/receipt-comparison";
 import { EXAMPLE_PAID_INTENT_ID } from "@/lib/public-demo";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Tiba — the check before an agent's payment goes out" };
+export const metadata = { title: "Tiba: the check before an agent's payment goes out" };
 
 function requestIdFor(adjudications: Array<{ channel: string; requestId: string | null }>, channel: string): string {
   return adjudications.find((row) => row.channel === channel)?.requestId ?? "missing";
@@ -41,7 +41,7 @@ export default async function Home() {
             The check that runs before your <RotatingWord words={["AI agents", "software", "apps", "workflows"]} intervalMs={2500} /> <em>pay someone</em>.
           </h1>
           <p className="lede mt-6">
-            It reads the bill against your own record — the amount, the job, the payee — and pays
+            It reads the bill against your own record (the amount, the job, the payee) and pays
             only when they match. When they don&apos;t, it refuses, and you get a receipt either way.
           </p>
           <p className="lede mt-4">
@@ -57,16 +57,13 @@ export default async function Home() {
               Try it
             </Link>
             <Link className="btn btn-secondary" href="/start">
-              Create your wallet
+              Make a test workspace
             </Link>
             <Link className="btn btn-ghost" href="/signin">
               Sign in
             </Link>
             <Link className="btn btn-ghost" href="/app">
-              See the demo wallet
-            </Link>
-            <Link className="btn btn-ghost" href="/permissions">
-              Explore permissions
+              See the demo workspace
             </Link>
           </div>
         </header>
@@ -122,7 +119,7 @@ export default async function Home() {
 
         <section className="border-t border-line pt-12">
           <p className="lede text-sm text-muted">
-            18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
+            18 rivals checked, 25 Sep 2026: Coinbase, Stripe, Squads, and thirteen YC companies.
             Of the 18 we compared as of 25 Sep 2026, none offered both a bill check and a public
             receipt for a refusal. Tiba works for any payer and any bill, not one supply chain, and
             every check, paid or refused, gets a public receipt anyone can open by link.
@@ -130,7 +127,7 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-line pt-12">
-          <p className="eyebrow">Your control, made explicit</p>
+          <p className="eyebrow">What you control</p>
           <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
             <div>
               <p className="num display-l">01</p>
@@ -138,11 +135,11 @@ export default async function Home() {
             </div>
             <div>
               <p className="num display-l">02</p>
-              <p className="eyebrow mt-2">human confirmation</p>
+              <p className="eyebrow mt-2">a person can approve</p>
             </div>
             <div>
               <p className="num display-l">03</p>
-              <p className="eyebrow mt-2">signed permission</p>
+              <p className="eyebrow mt-2">limits you set</p>
             </div>
             <div>
               <p className="num display-l">04</p>
@@ -177,34 +174,34 @@ export default async function Home() {
           </ol>
           <div className="mt-10 space-y-4">
             <p className="lede">
-              Around the check: a signed permission slip, spending limits and a freeze that your agent
+              Around the check: spending limits and a freeze that your agent
               can read but not change.
             </p>
             <p className="lede">
-              Most agent-payment plumbing, including x402 — the protocol AWS, Cloudflare, Circle,
-              and Coinbase now share — leaves the approval decision out of scope. The wallet is
-              supposed to decide whether a payment may go out at all. That check is what Tiba
+              Most agent-payment plumbing, including x402 (the protocol AWS, Cloudflare, Circle,
+              and Coinbase now share), leaves the approval decision out of scope. Something has to
+              decide whether a payment may go out at all. That check is what Tiba
               runs, before any signature.
             </p>
           </div>
         </section>
 
         <section className="border-t border-line pt-12">
-          <p className="eyebrow">Signed outcomes</p>
+          <p className="eyebrow">Public receipts</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="card p-5">
               <span className="pill pill-paid">Recorded</span>
               <p className="mt-3 text-sm">
-                A permitted notes action and a live <span className="num">0.01 USDC</span> Solana devnet payment each leave a signed receipt.
+                A live <span className="num">0.01 USDC</span> Solana devnet payment and a refusal each leave a public receipt.
               </p>
               <Link className="btn btn-ghost mt-3" href="/receipts">
-                See signed receipts →
+                See receipts →
               </Link>
             </div>
             <div className="card p-5">
               <span className="pill pill-refused">Refused</span>
               <p className="mt-3 text-sm">
-                An action outside the permission is refused before it goes out. The refusal is signed, too.
+                A bill that does not match the record is refused before it goes out. The refusal gets a public receipt too.
               </p>
               <Link className="btn btn-ghost mt-3" href="/verify">
                 Verify a receipt →
@@ -231,14 +228,14 @@ export default async function Home() {
             <div>
               <p className="lede">
                 <strong>Tempo &middot; proof.</strong> Built by Stripe and Paradigm, fees paid in
-                the stablecoin itself. Built and tested, not live &mdash; for contractors and
+                the stablecoin itself. Built and tested, not live. For contractors and
                 suppliers too.
               </p>
             </div>
             <div>
               <p className="lede">
                 <strong>Zcash &middot; proof.</strong> Payments hidden by default, a viewing key
-                for the auditor. Built and tested, not live &mdash; for private payroll and
+                for the auditor. Built and tested, not live. For private payroll and
                 grants too.
               </p>
             </div>
@@ -246,7 +243,7 @@ export default async function Home() {
         </section>
 
         <footer className="border-t border-line pt-12 text-sm text-muted">
-          Tiba · Test network only — no real money moves yet ·{" "}
+          Tiba · Test network only. No real money moves yet ·{" "}
           <Link className="link" href="/app">
             Open the app
           </Link>{" "}

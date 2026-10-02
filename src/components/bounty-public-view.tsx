@@ -64,7 +64,7 @@ export function BountyPublicView({ bounty, claims }: { bounty: BountyPublicData;
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="font-medium">{decisionSentence(claim.decisionClass)}</span>
                   {claim.decisionClass !== "PAID" && (
-                    <span className="text-muted">— {explainDecision(claim.decisionClass, claim.reasonCode)}</span>
+                    <span className="text-muted">{explainDecision(claim.decisionClass, claim.reasonCode)}</span>
                   )}
                   {claim.publicToken && (
                     <a className="link" href={`/r/${claim.publicToken}`}>Receipt</a>

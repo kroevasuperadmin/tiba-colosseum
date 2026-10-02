@@ -28,7 +28,7 @@ function shareUrl(shareCode: string): string {
 
 function discordMessage(bounty: Bounty): string {
   return [
-    `📋 **${bounty.title}** — ${bounty.amount}`,
+    `📋 **${bounty.title}**: ${bounty.amount}`,
     bounty.doneCriteria,
     "",
     `Claim it: ${shareUrl(bounty.shareCode)}`

@@ -17,7 +17,7 @@ function formatWhen(value: string): string {
 
 function receiptStatus(receipt: Receipt): { label: string; className: string; explanation: string } {
   if (receipt.result === "success") {
-    return { label: "Recorded", className: "pill-paid", explanation: "The signed action stayed inside the permission slip." };
+    return { label: "Recorded", className: "pill-paid", explanation: "The action stayed inside its limits." };
   }
   if (receipt.reason === "TIBA_REVOKED") {
     return { label: "Refused after revoke", className: "pill-refused", explanation: "The permission had already been revoked, so nothing was done." };
@@ -102,15 +102,15 @@ export default function ReceiptsPage() {
       <div className="mx-auto max-w-5xl px-4 py-10 md:px-6 md:py-14 lg:px-8">
         <header className="max-w-2xl">
           <p className="eyebrow">Receipts</p>
-          <h1 className="display-l mt-2">A signed record of every action.</h1>
+          <h1 className="display-l mt-2">A public record of every action.</h1>
           <p className="mt-4 max-w-[58ch] text-sm leading-6 text-muted md:text-base">
-            The demo wallet records payments and refusals alike. Anyone can inspect the signed receipt and check what happened.
+            The demo workspace records payments and refusals alike. Anyone can open a receipt and see what happened.
           </p>
         </header>
         <section className="mt-10" aria-labelledby="receipt-list-title">
           <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-line pb-3">
             <div>
-              <p className="eyebrow">Demo wallet</p>
+              <p className="eyebrow">Demo workspace</p>
               <h2 id="receipt-list-title" className="title mt-2">Signed actions</h2>
             </div>
             <span className="num text-sm text-muted">{demoReceipts.length} receipts</span>

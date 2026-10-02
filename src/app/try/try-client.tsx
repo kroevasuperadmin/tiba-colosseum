@@ -115,10 +115,10 @@ export function TryClient() {
       <FoolIt />
       <div className="mt-16 border-t border-line pt-14">
       <header className="max-w-xl">
-        <p className="eyebrow">Practice · no wallet needed</p>
+        <p className="eyebrow">More practice</p>
         <h2 className="display-l mt-2">Authorize a demo payout.</h2>
         <p className="mt-4 max-w-[58ch] text-sm leading-6 text-muted md:text-base">
-          Pick a scope, a budget, and an expiry. Tiba shows the receipt your agent would leave. Nothing is signed and no money moves.
+          Pick a scope, a budget, and an expiry. Tiba shows the receipt your agent would leave. No money moves.
         </p>
       </header>
 
@@ -317,7 +317,7 @@ function DemoReceipt({
       <div className="mt-8 border-t border-line pt-8">
         <h2 className="display-m">Now try it on the test network.</h2>
         <p className="mt-3 max-w-[52ch] text-sm leading-6 text-muted">
-          That was a practice run. Connect a wallet to authorize a test payout from your own Tiba wallet on Solana's test network, with a signed permission and a checkable receipt. No real money moves.
+          That was a practice run. Sign in to send a test payout on Solana's test network, with a public receipt. No real money moves.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link className="btn btn-primary" href="/signin?callbackUrl=/start">

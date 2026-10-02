@@ -125,8 +125,8 @@ export type CheckRow = {
   text: string;
 };
 
-const CHECK_1 = "Check 1 — the delivery note";
-const CHECK_2 = "Check 2 — your records";
+const CHECK_1 = "Check 1: the delivery note";
+const CHECK_2 = "Check 2: your records";
 
 // Reason codes refused before either check runs.
 const PRE_CHECK_REFUSALS = new Set([
@@ -144,7 +144,7 @@ export function sendResultChecks(decisionClass: string, reasonCode: string | nul
   if (decisionClass === "PAID") {
     return [
       { name: CHECK_1, mark: "pass", text: "Read the delivery note." },
-      { name: CHECK_2, mark: "pass", text: "Same invoice, same amount — agreed." }
+      { name: CHECK_2, mark: "pass", text: "Same invoice, same amount. Agreed." }
     ];
   }
 
@@ -163,21 +163,21 @@ export function sendResultChecks(decisionClass: string, reasonCode: string | nul
       "a different answer";
     return [
       { name: CHECK_1, mark: "pass", text: "Read the delivery note." },
-      { name: CHECK_2, mark: "fail", text: `Named ${what} — the checks disagreed.` }
+      { name: CHECK_2, mark: "fail", text: `Named ${what}. The checks disagreed.` }
     ];
   }
 
   if (reasonCode && PRE_CHECK_REFUSALS.has(reasonCode)) {
     return [
-      { name: CHECK_1, mark: "skip", text: "Not run — refused first." },
-      { name: CHECK_2, mark: "skip", text: "Not run — refused first." }
+      { name: CHECK_1, mark: "skip", text: "Not run. Refused first." },
+      { name: CHECK_2, mark: "skip", text: "Not run. Refused first." }
     ];
   }
 
   if (reasonCode === "SETTLEMENT_FAILED" || reasonCode === "SOLANA_EXECUTION_FAILED" || reasonCode === "TEMPO_EXECUTION_FAILED") {
     return [
       { name: CHECK_1, mark: "pass", text: "Agreed." },
-      { name: CHECK_2, mark: "pass", text: "Agreed — the transfer itself failed." }
+      { name: CHECK_2, mark: "pass", text: "Agreed. The transfer itself failed." }
     ];
   }
 
@@ -247,7 +247,7 @@ export function refusalNextStep(reasonCode: string | null): string {
     case "SETTLEMENT_FAILED":
     case "SOLANA_EXECUTION_FAILED":
     case "TEMPO_EXECUTION_FAILED":
-      return "What next: try again — the checks passed, the transfer failed.";
+      return "What next: try again. The checks passed, the transfer failed.";
     default:
       if (reasonCode?.startsWith("QUORUM_SPLIT")) {
         return "What next: make sure the delivery note and your records name the same invoice and amount.";
