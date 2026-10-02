@@ -421,3 +421,17 @@ test("a blank work order read from the payer record is named on that side instea
   assert.equal(result.outcome, "refused");
   assert.equal(result.record.workOrderId, "not found on the record");
 });
+
+test("when the model is down the try page falls back to a labelled stored example, never a fake receipt", async () => {
+  const { storedFoolItExample } = await import("../src/lib/fool-it-sample.ts");
+  const refused = storedFoolItExample(SANDBOX_WRONG_WORK_ORDER_ID, SANDBOX_WRONG_AMOUNT_USDC);
+  assert.equal(refused.outcome, "stored_refused");
+  assert.equal(refused.record.workOrderId, SANDBOX_WORK_ORDER_ID);
+  assert.match(refused.note, /did not run/);
+  assert.match(refused.note, /no receipt/);
+  const match = storedFoolItExample(SANDBOX_WORK_ORDER_ID, "1.0");
+  assert.equal(match.outcome, "stored_would_pay");
+  assert.equal(storedFoolItExample(SANDBOX_WORK_ORDER_ID, "1.20").outcome, "stored_refused");
+  const source = readFileSync("src/app/try/fool-it.tsx", "utf8");
+  assert.match(source, /outcome === "unavailable"\) setStored/);
+});

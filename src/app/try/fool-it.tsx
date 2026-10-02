@@ -9,7 +9,9 @@ import {
   SANDBOX_WORK_ORDER_ID,
   SANDBOX_WRONG_AMOUNT_USDC,
   SANDBOX_WRONG_WORK_ORDER_ID,
-  sandboxBillText
+  sandboxBillText,
+  storedFoolItExample,
+  type StoredExample
 } from "@/lib/fool-it-sample";
 
 type Readout = { workOrderId: string; amount: string };
@@ -32,6 +34,7 @@ export function FoolIt() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FoolResponse | null>(null);
+  const [stored, setStored] = useState<StoredExample | null>(null);
 
   async function submit(nextWorkOrderId: string, nextAmount: string) {
     setWorkOrderId(nextWorkOrderId);
@@ -39,6 +42,7 @@ export function FoolIt() {
     setPending(true);
     setError(null);
     setResult(null);
+    setStored(null);
     try {
       const response = await fetch("/api/try/fool", {
         method: "POST",
@@ -54,8 +58,10 @@ export function FoolIt() {
       if (body.outcome === "invalid" || body.outcome === "unavailable" || body.outcome === "rate_limited") {
         setError(body.message ?? "The check could not be finished. Nothing was sent.");
       }
+      if (body.outcome === "unavailable") setStored(storedFoolItExample(nextWorkOrderId, nextAmount));
     } catch {
       setError("The check could not be finished. Nothing was sent.");
+      setStored(storedFoolItExample(nextWorkOrderId, nextAmount));
     } finally {
       setPending(false);
     }
@@ -161,6 +167,16 @@ export function FoolIt() {
                 Open the receipt
               </Link>
             ) : null}
+          </article>
+        ) : null}
+        {stored ? (
+          <article className="card mt-4 p-5" data-testid="stored-example">
+            <p className="text-base font-medium">{stored.outcome === "stored_refused" ? "Example: this bill would be refused" : "Example: this bill would match"}</p>
+            <p className="mt-2 text-sm leading-6 text-muted">{stored.note}</p>
+            <dl className="mt-4 divide-y divide-line border-y border-line text-sm">
+              <Row label="Bill" value={`${stored.bill.workOrderId}, ${stored.bill.amount}`} />
+              <Row label="Record" value={`${stored.record.workOrderId}, ${stored.record.amount}`} />
+            </dl>
           </article>
         ) : null}
         {result?.outcome === "would_pay" ? (

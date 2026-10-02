@@ -26,3 +26,26 @@ export const SANDBOX_PAYER_RECORD = {
 export function sandboxBillText(workOrderId: string, amountUsdc: string): string {
   return `Delivery note.\nWork order: ${workOrderId}\nAmount due: ${amountUsdc} USDC\nStatus: delivered`;
 }
+
+export type StoredExample = {
+  outcome: "stored_refused" | "stored_would_pay";
+  bill: { workOrderId: string; amount: string };
+  record: { workOrderId: string; amount: string };
+  note: string;
+};
+
+/**
+ * Fallback for when the reading service is down. A plain comparison of the typed bill with the
+ * sample record, done on the spot. It is NOT the two checks and it makes no receipt. The note says
+ * so, so nobody mistakes it for a live decision.
+ */
+export function storedFoolItExample(workOrderId: string, amountUsdc: string): StoredExample {
+  const id = workOrderId.trim();
+  const amount = amountUsdc.trim();
+  const bill = { workOrderId: id, amount: `${amount} USDC` };
+  const record = { workOrderId: SANDBOX_WORK_ORDER_ID, amount: `${SANDBOX_AMOUNT_USDC} USDC` };
+  const matches = id === SANDBOX_WORK_ORDER_ID && Number(amount) === Number(SANDBOX_AMOUNT_USDC);
+  const note =
+    "Stored example. The reading service is not answering, so the two checks did not run. This is a plain comparison on this page, with no receipt and nothing sent.";
+  return { outcome: matches ? "stored_would_pay" : "stored_refused", bill, record, note };
+}
