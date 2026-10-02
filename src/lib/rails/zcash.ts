@@ -92,7 +92,10 @@ function txidFromQuicksend(stdout: string): string {
  * one-request-unit-is-one-chain-unit choice the old testnet rails used).
  * The spending key stays in the zingo wallet directory.
  */
-async function execute(request: PayoutRequest): Promise<PayoutReceipt> {
+export async function executeZcash(
+  request: PayoutRequest,
+  deps: { run?: (args: string[]) => Promise<string> } = {}
+): Promise<PayoutReceipt> {
   requireTestnet();
   if (request.amountMicros <= 0n) {
     throw new PayoutRailError("INVALID_PAYOUT", "Payout amount must be greater than zero.");
@@ -103,7 +106,7 @@ async function execute(request: PayoutRequest): Promise<PayoutReceipt> {
   }
   let stdout: string;
   try {
-    stdout = await runZingo([
+    stdout = await (deps.run ?? runZingo)([
       "--waitsync",
       "quicksend",
       recipient,
@@ -115,6 +118,10 @@ async function execute(request: PayoutRequest): Promise<PayoutReceipt> {
   }
   const digest = txidFromQuicksend(stdout);
   return { digest, explorerUrl: zcashExplorerTxUrl(digest) };
+}
+
+async function execute(request: PayoutRequest): Promise<PayoutReceipt> {
+  return executeZcash(request);
 }
 
 export const zcashRail: PayoutRail = {
