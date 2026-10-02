@@ -223,3 +223,11 @@ test("claim -> refuse (asks less or more than the owner's reward): the record di
     assert.match(result.reasonCode, /^QUORUM_SPLIT/);
   }
 });
+
+test("the claim form sentence says what the code does for open and listed bounties", async () => {
+  const { claimRuleSentence } = await import("../src/lib/bounty-claim-gate.ts");
+  assert.match(claimRuleSentence({ allowedClaimers: [] }), /held for the bounty owner/);
+  assert.match(claimRuleSentence({ allowedClaimers: ["x"] }), /owner's record/);
+  assert.equal(requiredChannelsForBounty({ allowedClaimers: [] }), "human");
+  assert.equal(requiredChannelsForBounty({ allowedClaimers: ["x"] }), "both");
+});

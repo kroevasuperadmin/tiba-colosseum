@@ -121,3 +121,14 @@ export function buildClaimArtifactText(
     `Amount requested: ${microsToUsdc(claim.amountAskedMicros)}`
   ].join("\n");
 }
+
+/**
+ * One plain sentence for the claim form that says what the code really does. Kept next to the
+ * logic it describes so the two cannot drift apart without a test noticing.
+ */
+export function claimRuleSentence(bounty: Pick<BountyForGate, "allowedClaimers">): string {
+  if (bounty.allowedClaimers.length > 0) {
+    return "Only the people the bounty owner listed can claim. Tiba checks your claim against the owner's record: the reward the owner set and the done criteria. Ask for exactly the reward. It does not judge whether your work is good.";
+  }
+  return "Anyone can claim. Tiba does not pay an open bounty by itself. The claim is held for the bounty owner to approve.";
+}

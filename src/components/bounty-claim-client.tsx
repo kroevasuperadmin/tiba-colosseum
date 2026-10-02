@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { microsToUsdc } from "@/lib/money";
+import { claimRuleSentence } from "@/lib/bounty-claim-gate";
 import { decisionSentence, explainDecision, humanError } from "@/app/console/types";
 import type { BountyPublicClaim, BountyPublicData } from "./bounty-public-view";
 
@@ -91,6 +92,8 @@ export function BountyClaimClient({ bounty }: BountyClaimClientProps) {
           {copied ? "Copied" : "Copy for Discord"}
         </button>
       </div>
+
+      <p className="mb-4 text-sm text-muted" data-testid="claim-rule">{claimRuleSentence(bounty)}</p>
 
       {closed && <p className="text-muted">This bounty is closed and no longer taking claims.</p>}
 

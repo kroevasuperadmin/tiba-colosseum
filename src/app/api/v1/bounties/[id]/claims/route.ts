@@ -46,8 +46,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 }
 
 /** Submit a claim: no sign-in, no owner key -- anyone with a Solana address and a link to their
- *  work can claim an open bounty. Every claim runs through the same check as an invoice payout
- *  and gets a real receipt, paid or refused. */
+ *  work can claim an open bounty. Every claim gets a real receipt. On a bounty with a list of
+ *  allowed claimers the claim is checked against the owner's record (reward and done criteria);
+ *  on an open bounty it is held for a person. */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const bounty = await findBounty(id);
