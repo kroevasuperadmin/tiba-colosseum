@@ -79,10 +79,10 @@ test("an over-amount claim from a disallowed claimer is refused for the amount f
   );
 });
 
-const bountyRecord = { id: "bounty-1", title: "Ship the docs", doneCriteria: "Publish the guide" };
+const bountyRecord = { id: "bounty-1", title: "Ship the docs", doneCriteria: "Publish the guide", amountMicros: 50_000_000n };
 
 test("the payer record carries the exact keys the payer_record prompt requires", () => {
-  const record = buildBountyPayerRecord(bountyRecord, "claim-1", 50_000_000n);
+  const record = buildBountyPayerRecord(bountyRecord, "claim-1");
   assert.equal(record.approved_amount_micros, "50000000");
   assert.equal(record.delivery_status, "verified_complete");
   assert.equal(record.bounty_id, "bounty-1");
@@ -105,7 +105,7 @@ test("the claim artifact text states the amount in USDC for the artifact channel
 // same way test/x402-buyer.test.mjs exercises them: composed directly, without a database.
 function claimPipeline({ bountyAmountMicros, claimAmountMicros, workOrderId = "bounty-claim:demo" }) {
   const now = new Date("2026-09-26T00:00:00.000Z");
-  const record = buildBountyPayerRecord({ id: "b1", title: "t", doneCriteria: "d" }, "claim-1", claimAmountMicros);
+  const record = buildBountyPayerRecord({ id: "b1", title: "t", doneCriteria: "d", amountMicros: bountyAmountMicros }, "claim-1");
   const payerTuple = {
     workOrderId,
     amountMicros: BigInt(record.approved_amount_micros),
@@ -128,11 +128,12 @@ test("claim -> pay: a claim asking for the bounty amount, both channels agreeing
   assert.deepEqual(result, { ok: true });
 });
 
-test("claim -> refuse (over amount): the ceiling check refuses it even if it somehow reached the pipeline", () => {
-  // Defense in depth: evaluateClaimGate is meant to catch this first, but the WorkOrder ceiling
-  // (set to the bounty amount) refuses it independently if that gate were ever bypassed.
+test("claim -> refuse (over amount): the record, which the claimant did not write, disagrees first", () => {
+  // Before 2 Oct the record copied the ask, so only the ceiling stopped this. Now the record holds
+  // the owner's reward, so the two checks split. The ceiling and evaluateClaimGate still guard it too.
   const result = claimPipeline({ bountyAmountMicros: 50_000_000n, claimAmountMicros: 75_000_000n });
-  assert.deepEqual(result, { ok: false, reasonCode: "WORK_ORDER_CEILING" });
+  assert.equal(result.ok, false);
+  assert.match(result.reasonCode, /^QUORUM_SPLIT/);
 });
 
 test("claim -> refuse (not allowed claimer): the gate alone is the check, and it names the reason", () => {
@@ -204,4 +205,21 @@ test("the public claim route rate-limits before submitting a claim", () => {
   assert.ok(ipLimitAt !== -1 && ipLimitAt < submitAt);
   assert.ok(dailyLimitAt !== -1 && dailyLimitAt < submitAt);
   assert.match(source.slice(dailyLimitAt, submitAt), /claimsInLastDay >= 100/);
+});
+
+test("the record does not move when the claimant asks for a different amount", () => {
+  const a = buildBountyPayerRecord(bountyRecord, "claim-1");
+  assert.equal(a.approved_amount_micros, "50000000");
+  assert.equal(a.record_source, "bounty_owner");
+  // The builder takes no claim amount at all: there is nothing for a claimant to push.
+  assert.equal(buildBountyPayerRecord.length, 2);
+});
+
+test("claim -> refuse (asks less or more than the owner's reward): the record disagrees with the claim", () => {
+  for (const ask of [10_000_000n, 49_999_999n]) {
+    const result = claimPipeline({ bountyAmountMicros: 50_000_000n, claimAmountMicros: ask });
+    assert.equal(result.ok, false, `ask ${ask} must not pass`);
+    assert.equal(result.decisionClass, "RED");
+    assert.match(result.reasonCode, /^QUORUM_SPLIT/);
+  }
 });

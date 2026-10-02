@@ -77,23 +77,32 @@ export interface BountyForRecord {
   id: string;
   title: string;
   doneCriteria: string;
+  /** The reward the bounty owner set. This, not the claimant's ask, is the amount on the record. */
+  amountMicros: bigint;
 }
 
 /**
- * The claim becomes the bill (the "artifact" channel reads this free-text submission); the
- * bounty becomes the payer's own record of what's owed (the "payer_record" channel reads this
- * JSON) -- the same two-channel shape processPayoutIntent already expects, just built from
- * bounty/claim data instead of an invoice. approved_amount_micros/delivery_status are the exact
- * keys payerRecordSystemPrompt (src/lib/prompts.ts) requires; the rest is audit context.
+ * The bounty owner's side of the check. The claim becomes the bill (the "artifact" channel reads
+ * this free-text submission); the bounty becomes the payer's own record (the "payer_record"
+ * channel reads this JSON). The record is built only from what the bounty owner wrote: the reward
+ * amount and the done criteria. Nothing in it comes from the claim except the claim id used for
+ * audit. So a claim that asks for a different amount than the bounty's reward disagrees with the
+ * record and is refused; a claimant cannot move the record by asking for more or less.
+ *
+ * What this does NOT do: it does not check that the work was actually done. delivery_status is
+ * "verified_complete" only because this record is built for a bounty with an owner-approved
+ * claimer list (an open bounty has no such list and waits for a person instead, see
+ * requiredChannelsForBounty). The key names are exactly what payerRecordSystemPrompt
+ * (src/lib/prompts.ts) requires.
  */
 export function buildBountyPayerRecord(
   bounty: BountyForRecord,
-  claimId: string,
-  amountAskedMicros: bigint
+  claimId: string
 ): Record<string, string> {
   return {
-    approved_amount_micros: amountAskedMicros.toString(),
+    approved_amount_micros: bounty.amountMicros.toString(),
     delivery_status: "verified_complete",
+    record_source: "bounty_owner",
     bounty_id: bounty.id,
     bounty_title: bounty.title,
     done_criteria: bounty.doneCriteria,

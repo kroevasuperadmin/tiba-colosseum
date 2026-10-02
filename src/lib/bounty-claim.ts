@@ -152,7 +152,7 @@ export async function submitBountyClaim(
       recipientId: recipient.id,
       ceilingMicros: bounty.amountMicros,
       briefText: `${bounty.title} — ${bounty.doneCriteria}`,
-      payerRecord: buildBountyPayerRecord(bounty, claim.id, input.amountAskedMicros),
+      payerRecord: buildBountyPayerRecord(bounty, claim.id),
       requiredChannels: requiredChannelsForBounty(bounty),
       expiresAt,
       status: "open"
