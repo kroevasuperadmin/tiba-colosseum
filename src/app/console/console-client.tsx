@@ -195,7 +195,7 @@ export function ConsoleClient({
 
   // Define the disallowed actions
   const disallowedActions = [
-    { action: "Approve a payment", allowed: "No", scope: "—", boundary: "Not even you can pick a side when the checks disagree" },
+    { action: "Approve a payment", allowed: "No", scope: "—", boundary: "Only you, with the owner key. If the checks disagree, your approval pays what your own record says, never what the bill says" },
     { action: "Change a limit or the saved recipients", allowed: "No", scope: "—", boundary: "Only you, with the owner key" },
     { action: "Turn the freeze on or off", allowed: "No", scope: "—", boundary: "Only you, with the owner key" }
   ];

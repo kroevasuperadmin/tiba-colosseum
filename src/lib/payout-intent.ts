@@ -11,11 +11,22 @@ import {
   payerRecordDecisionSchema,
   payerRecordSystemPrompt
 } from "@/lib/prompts";
+import {
+  assertArtifactSize,
+  assertReplayBelongsTo,
+  effectiveChannels,
+  INTENT_RATE_LIMITED,
+  intentBudgetExceeded
+} from "@/lib/payout-guards";
 import { debitAtomically, evaluateBeforeDebit, type AgentLimits, type PolicyReason, type SqlExecutor } from "@/lib/policy";
 import { reconcile, type DecisionTuple, type RequiredChannels } from "@/lib/reconcile";
-import { chainForRecipient, executionFailedCode, PayoutRailError, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
+import { committedPendingData, settleCommittedIntent } from "@/lib/payout-settlement";
+import { chainForRecipient, payoutRail, recipientAddressReason, settledChain } from "@/lib/rails";
+import { isBase58Signature } from "@/lib/rails/base58";
 import { solanaExplorerTxUrl } from "@/lib/rails/solana";
 import { replenishDemoWorkOrder } from "@/lib/demo-replenish";
+import { X402_NEEDS_LIVE_WALLET } from "@/lib/x402/gate";
+import { readSolanaTransaction, x402SettlementProven, type ChainTransactionReader } from "@/lib/x402/settlement-proof";
 import type { SettlementResponse } from "@/lib/x402/types";
 
 export type PublicIntent = {
@@ -30,6 +41,8 @@ export type PublicIntent = {
   /** Same value as digest: the transaction id on whichever chain settled. */
   signature: string | null;
   x402Routed: boolean;
+  /** Amount (micros) the checks cleared and the debit counted. Null until the checks agree. */
+  amountMicros?: string | null;
 };
 
 type IntentBody = {
@@ -58,6 +71,7 @@ function toPublicIntent(intent: {
   publicToken: string;
   chain: string | null;
   x402Routed?: boolean;
+  amountMicros?: bigint | null;
 }): PublicIntent {
   return {
     id: intent.id,
@@ -69,7 +83,8 @@ function toPublicIntent(intent: {
     publicToken: intent.publicToken,
     chain: intent.chain,
     signature: intent.digest,
-    x402Routed: intent.x402Routed === true
+    x402Routed: intent.x402Routed === true,
+    amountMicros: intent.amountMicros != null ? intent.amountMicros.toString() : null
   };
 }
 
@@ -116,6 +131,19 @@ async function pricingData() {
   };
 }
 
+/**
+ * Throws INTENT_RATE_LIMITED before any row is written: nothing is stored and no receipt exists
+ * for a blocked call. Served by the existing (agentId, createdAt) index on payout_intents.
+ */
+export async function assertIntentBudget(agentId: string, now = new Date()): Promise<void> {
+  const since = new Date(now.getTime() - 60 * 60 * 1000);
+  const [mine, all] = await Promise.all([
+    prisma.payoutIntent.count({ where: { agentId, createdAt: { gte: since } } }),
+    prisma.payoutIntent.count({ where: { createdAt: { gte: since } } })
+  ]);
+  if (intentBudgetExceeded({ mine, all })) throw new Error(INTENT_RATE_LIMITED);
+}
+
 export async function processPayoutIntent(
   agent: Agent,
   body: IntentBody,
@@ -123,8 +151,14 @@ export async function processPayoutIntent(
 ): Promise<PublicIntent> {
   const gonka = options.gonka ?? runGonka;
   const settlement = options.settlement ?? "rail";
+  assertArtifactSize(body.artifact);
   const existing = await prisma.payoutIntent.findUnique({ where: { idempotencyKey: body.idempotency_key } });
-  if (existing) return toPublicIntent(existing);
+  if (existing) {
+    // Another workspace's key: refuse, and never hand back that workspace's intent or receipt token.
+    assertReplayBelongsTo(existing, agent);
+    return toPublicIntent(existing);
+  }
+  await assertIntentBudget(agent.id);
 
   // Only this workspace's recipients, and through them only its own open invoices.
   const recipient = await prisma.recipient.findFirst({ where: { ref: body.recipient_ref, agentId: agent.id } });
@@ -191,6 +225,18 @@ export async function processPayoutIntent(
   }
   const chain = settledChain(agent.rail, target.chain);
 
+  // An x402 authorization is only ever signed with Solana devnet USDC from the treasury. A
+  // workspace that settles anywhere else (practice wallet, MOCK_SETTLEMENT, RAIL=tempo) is
+  // refused here, before the checks run and before anything counts against its limits.
+  if (settlement === "defer" && chain !== "solana") {
+    const pricing = await pricingData();
+    const denied = await prisma.payoutIntent.update({
+      where: { id: intent.id },
+      data: { status: "refused", decisionClass: "RED", reasonCode: X402_NEEDS_LIVE_WALLET, ...pricing }
+    });
+    return toPublicIntent(denied);
+  }
+
   const artifactMessages: GonkaMessage[] = [
     { role: "system", content: artifactSystemPrompt },
     {
@@ -230,7 +276,9 @@ export async function processPayoutIntent(
   const channelPolicyWorkOrder = payerTuple
     ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
     : null;
-  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  // The amount rule cannot be turned off: the work order's stored choice can only add strictness.
+  const storedChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  const requiredChannels = payerTuple ? effectiveChannels(storedChannels, payerTuple.amountMicros) : storedChannels;
   // A fallback that left both checks on one maker is recorded. It does not change pay or refuse.
   const sameMaker = sameMakerFallback({
     requiredChannels,
@@ -332,9 +380,13 @@ export async function processPayoutIntent(
     return toPublicIntent(updated);
   }
 
+  const pricing = await pricingData();
+
+  // Step 1, committed before any money moves: the debit, the discharge, and the intent marked
+  // pending. Nothing here touches the network, so a rollback can only mean the database refused.
+  let committed;
   try {
-    const pricing = await pricingData();
-    const updated = await prisma.$transaction(async (tx) => {
+    committed = await prisma.$transaction(async (tx) => {
       const debit = await debitAtomically(tx as unknown as SqlExecutor, agent as AgentLimits, reconciled.tuple.amountMicros, now);
       if (!debit.ok) {
         return tx.payoutIntent.update({
@@ -374,34 +426,14 @@ export async function processPayoutIntent(
         });
       }
 
-      const receipt = await payoutRail(agent.rail, target.chain).send({
-        recipientAddress: target.address,
-        amountMicros: reconciled.tuple.amountMicros,
-        intentId: intent.id
-      });
-      if (!receipt.digest || !receipt.explorerUrl) {
-        throw new PayoutRailError(executionFailedCode(target.chain), "Settlement did not return a digest.");
-      }
-
       return tx.payoutIntent.update({
         where: { id: intent.id },
-        data: {
-          workOrderId: selected.id,
-          amountMicros: reconciled.tuple.amountMicros,
-          status: "settled",
-          decisionClass: "PAID",
-          digest: receipt.digest,
-          explorerUrl: receipt.explorerUrl,
-          chain,
-          ...pricing
-        }
+        data: committedPendingData({ workOrderId: selected.id, amountMicros: reconciled.tuple.amountMicros, chain, pricing })
       });
-    }, { timeout: 120_000 });
-
-    await replenishDemoWorkOrder(prisma, { workOrderId: updated.workOrderId, settled: updated.status === "settled" });
-    return toPublicIntent(updated);
-  } catch {
-    const pricing = await pricingData();
+    });
+  } catch (error) {
+    // The database did not commit anything: no debit, no discharge, nothing sent.
+    console.error(`[intents] commit before settlement failed for intent ${intent.id}`, error);
     const updated = await prisma.payoutIntent.update({
       where: { id: intent.id },
       data: {
@@ -418,19 +450,48 @@ export async function processPayoutIntent(
     });
     return toPublicIntent(updated);
   }
+
+  if (committed.status !== "processing" || settlement === "defer") return toPublicIntent(committed);
+
+  // Step 2, outside any database transaction: sign, store the id, broadcast, confirm. Only a
+  // proven outcome changes the record; a timeout leaves it pending and the invoice closed.
+  await settleCommittedIntent(prisma, {
+    intentId: intent.id,
+    workOrderId: selected.id,
+    amountMicros: reconciled.tuple.amountMicros,
+    target,
+    rail: payoutRail(agent.rail, target.chain),
+    paidReasonCode: null,
+    pricing
+  });
+  return toPublicIntent(await prisma.payoutIntent.findUniqueOrThrow({ where: { id: intent.id } }));
 }
 
-export async function finalizeX402Settlement(intentId: string, settlement: SettlementResponse): Promise<PublicIntent> {
+/**
+ * Record what an x402 seller reported. PAID needs proof, not the seller's word: the reported
+ * transaction id must be a confirmed, error-free transaction on Solana devnet that carries
+ * Tiba's own signature (which covers the exact amount, mint and payTo the checks cleared).
+ * Anything short of that stays SETTLEMENT_PENDING. The invoice stays discharged either way.
+ */
+export async function finalizeX402Settlement(
+  intentId: string,
+  settlement: SettlementResponse,
+  expectedSignature: string | null = null,
+  readTransaction: ChainTransactionReader = readSolanaTransaction
+): Promise<PublicIntent> {
   const intent = await prisma.payoutIntent.findUnique({ where: { id: intentId } });
   if (!intent) throw new Error("INTENT_NOT_FOUND");
   if (!intent.x402Routed) throw new Error("INTENT_NOT_X402");
 
-  const pending = settlement.errorReason === "settlement_pending";
-  const digest = settlement.transaction?.trim() ? settlement.transaction.trim() : null;
+  const reported = settlement.transaction?.trim() ?? "";
+  // A transaction id that is not base58 is not a transaction id: never stored, never linked.
+  const digest = reported && isBase58Signature(reported) ? reported : null;
   const explorerUrl = digest ? solanaExplorerTxUrl(digest) : null;
+  const proven = settlement.success && (await x402SettlementProven(digest, expectedSignature, readTransaction));
+  const pending = settlement.errorReason === "settlement_pending" || (settlement.success && !proven);
   const pricing = await pricingData();
 
-  if (settlement.success) {
+  if (proven) {
     const updated = await prisma.payoutIntent.update({
       where: { id: intentId },
       data: {

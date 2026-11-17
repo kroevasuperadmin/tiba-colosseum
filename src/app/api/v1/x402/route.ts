@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { IDEMPOTENCY_KEY_IN_USE, INTENT_RATE_LIMITED } from "@/lib/payout-guards";
 import { finalizeX402Settlement, processPayoutIntent, type PublicIntent } from "@/lib/payout-intent";
 import { payX402Resource } from "@/lib/x402/buyer";
+import { x402RailRefusal } from "@/lib/x402/gate";
+import { guardedX402Fetch, X402_URL_NOT_ALLOWED } from "@/lib/x402/guarded-fetch";
 import { ensureX402Obligation } from "@/lib/x402/obligation";
+import { treasurySignatureOf } from "@/lib/x402/settlement-proof";
 import { signExactSvmPayment } from "@/lib/x402/svm";
 import { solanaPayerKeypair } from "@/lib/rails/solana";
 
@@ -40,6 +44,11 @@ export async function POST(request: NextRequest) {
   const agent = await prisma.agent.findUnique({ where: { apiKeyHash: hash(secret) } });
   if (!agent) return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
 
+  // Practice wallets and non-Solana deployments never get the treasury to sign. Checked before
+  // the body is read or any address is fetched.
+  const railRefusal = x402RailRefusal(agent.rail);
+  if (railRefusal) return NextResponse.json({ error: railRefusal }, { status: 403 });
+
   let body: { url?: unknown; method?: unknown; idempotency_key?: unknown; headers?: unknown; body?: unknown };
   try {
     body = await request.json();
@@ -72,11 +81,24 @@ export async function POST(request: NextRequest) {
         idempotency_key: body.idempotency_key
       },
       {
-        fetch,
+        // https only, public hosts only, no redirects: the caller names the address.
+        fetch: guardedX402Fetch(),
         authorize: (_workspace, intentBody) =>
           processPayoutIntent(agent, intentBody, { settlement: "defer" }),
+        // One signature per intent. The defer branch leaves reasonCode null; this flips it to
+        // X402_SIGNING, finalize moves it on (PAID, SETTLEMENT_PENDING or SETTLEMENT_FAILED), so
+        // every later call, retried or in parallel, sees count 0 and never signs.
+        claimSignature: async (intentId) =>
+          (
+            await prisma.payoutIntent.updateMany({
+              where: { id: intentId, agentId: agent.id, x402Routed: true, status: "processing", reasonCode: null },
+              data: { reasonCode: "X402_SIGNING" }
+            })
+          ).count === 1,
         signPayment: (accepted) => signExactSvmPayment(solanaPayerKeypair(), accepted),
-        recordSettlement: finalizeX402Settlement,
+        treasurySignature: (transaction) => treasurySignatureOf(transaction, solanaPayerKeypair().publicKey),
+        recordSettlement: (intentId, settlement, expectedSignature) =>
+          finalizeX402Settlement(intentId, settlement, expectedSignature),
         ensureObligation: ensureX402Obligation
       }
     );
@@ -108,6 +130,15 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof Error && error.message === "RECIPIENT_NOT_FOUND") {
       return NextResponse.json({ error: "RECIPIENT_NOT_FOUND" }, { status: 404 });
+    }
+    if (error instanceof Error && error.message === X402_URL_NOT_ALLOWED) {
+      return NextResponse.json({ error: X402_URL_NOT_ALLOWED }, { status: 400 });
+    }
+    if (error instanceof Error && error.message === IDEMPOTENCY_KEY_IN_USE) {
+      return NextResponse.json({ error: IDEMPOTENCY_KEY_IN_USE }, { status: 409 });
+    }
+    if (error instanceof Error && error.message === INTENT_RATE_LIMITED) {
+      return NextResponse.json({ error: INTENT_RATE_LIMITED }, { status: 429 });
     }
     console.error("[x402] buyer failed:", error);
     return NextResponse.json({ error: "INTERNAL_ERROR" }, { status: 500 });

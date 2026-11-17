@@ -3,6 +3,8 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import bs58 from "bs58";
+import { treasurySignatureOf } from "../src/lib/x402/settlement-proof.ts";
 import { evaluateBeforeDebit } from "../src/lib/policy.ts";
 import { reconcile } from "../src/lib/reconcile.ts";
 import { SOLANA_USDC_DEVNET_MINT } from "../src/lib/rails/solana.ts";
@@ -56,7 +58,18 @@ function blankIntent(overrides) {
     chain: "solana",
     signature: null,
     x402Routed: true,
+    amountMicros: AMOUNT,
     ...overrides
+  };
+}
+
+/** The route's claimSignature, in memory: a conditional update that succeeds once per intent. */
+function signatureClaims() {
+  const claimed = new Set();
+  return async (intentId) => {
+    if (claimed.has(intentId)) return false;
+    claimed.add(intentId);
+    return true;
   };
 }
 
@@ -224,12 +237,15 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
   const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
   const events = [];
   let recorded;
+  let expectedSignature;
   try {
     const result = await payX402Resource(
       { id: "agent-1" },
       { url: mock.url, idempotency_key: randomUUID() },
       {
         fetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: (transaction) => treasurySignatureOf(transaction, addresses.payer.publicKey),
         ensureObligation: async () => {
           events.push("obligation");
           return { recipientRef: "seller", workOrderRef: "X402-test" };
@@ -247,9 +263,10 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
           events.push("sign");
           return signExactSvmPayment(addresses.payer, chosen);
         },
-        recordSettlement: async (intentId, settlement) => {
+        recordSettlement: async (intentId, settlement, expected) => {
           events.push("record");
           recorded = settlement;
+          expectedSignature = expected;
           return blankIntent({
             id: intentId,
             status: "settled",
@@ -273,6 +290,10 @@ test("buyer pays a local mock 402 end-to-end after two-channel and policy pass",
     const tx = VersionedTransaction.deserialize(Buffer.from(payload.payload.transaction, "base64"));
     assert.equal(tx.message.staticAccountKeys[0].toBase58(), addresses.feePayer.publicKey.toBase58());
     assert.ok(tx.signatures[0].every((byte) => byte === 0));
+
+    // The buyer handed finalize Tiba's own signature out of the transaction it sent the seller.
+    const payerIndex = tx.message.staticAccountKeys.findIndex((key) => key.equals(addresses.payer.publicKey));
+    assert.equal(expectedSignature, bs58.encode(tx.signatures[payerIndex]));
   } finally {
     await mock.close();
   }
@@ -289,6 +310,8 @@ test("policy-refused x402 never reaches the signature step or the seller", async
       { url: mock.url, idempotency_key: randomUUID() },
       {
         fetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => {
           events.push("gate");
@@ -330,6 +353,8 @@ test("two-channel disagreement refuses before any x402 signature", async () => {
       { url: mock.url, idempotency_key: randomUUID() },
       {
         fetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: () => null,
         ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
         authorize: async () => {
           events.push("gate");
@@ -351,6 +376,180 @@ test("two-channel disagreement refuses before any x402 signature", async () => {
     assert.equal(mock.signedRequests.length, 0);
     assert.equal(events.includes("sign"), false);
     assert.deepEqual(events, ["gate", "two-channel"]);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("a second call with the same idempotency key never reaches signPayment (one signature per intent)", async () => {
+  const addresses = keys();
+  const accepted = acceptedFor(addresses);
+  // The seller answers every paid retry with settlement_pending, so the intent stays processing.
+  const mock = await startMock402({
+    accepted,
+    resource: resourceInfo("http://x402.test/premium"),
+    settle: { success: false, errorReason: "settlement_pending", transaction: "", network: SOLANA_DEVNET_CAIP2 }
+  });
+  const key = randomUUID();
+  const stored = blankIntent({ id: "intent-replay" });
+  let signCalls = 0;
+  const deps = {
+    fetch,
+    claimSignature: signatureClaims(),
+    treasurySignature: () => null,
+    ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+    // The engine's replay path: the same stored intent comes back, no checks, no limits.
+    authorize: async () => stored,
+    signPayment: async (chosen) => {
+      signCalls += 1;
+      return signExactSvmPayment(addresses.payer, chosen);
+    },
+    recordSettlement: async (intentId, settlement) =>
+      blankIntent({ id: intentId, reasonCode: settlement.errorReason === "settlement_pending" ? "SETTLEMENT_PENDING" : null })
+  };
+  try {
+    const first = await payX402Resource({ id: "agent-1" }, { url: mock.url, idempotency_key: key }, deps);
+    assert.equal(first.kind, "refused");
+    assert.equal(first.error, "settlement_pending");
+    assert.equal(signCalls, 1);
+
+    const second = await payX402Resource({ id: "agent-1" }, { url: mock.url, idempotency_key: key }, deps);
+    assert.equal(second.kind, "refused");
+    assert.equal(second.error, "X402_ALREADY_SIGNED");
+    assert.equal(signCalls, 1, "the treasury signed exactly once");
+    assert.equal(mock.signedRequests.length, 1, "the seller saw exactly one signed request");
+
+    // Parallel calls race for the same claim; still one signature.
+    const parallel = await Promise.all([
+      payX402Resource({ id: "agent-1" }, { url: mock.url, idempotency_key: key }, deps),
+      payX402Resource({ id: "agent-1" }, { url: mock.url, idempotency_key: key }, deps)
+    ]);
+    assert.deepEqual(parallel.map((row) => row.error), ["X402_ALREADY_SIGNED", "X402_ALREADY_SIGNED"]);
+    assert.equal(signCalls, 1);
+  } finally {
+    await mock.close();
+  }
+});
+
+test("a 402 asking for a different amount than the intent cleared is refused before any signature", async () => {
+  const addresses = keys();
+  // The seller now asks for 10x what the checks cleared for this key.
+  const accepted = acceptedFor(addresses);
+  accepted.amount = "100000";
+  const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
+  const events = [];
+  try {
+    const result = await payX402Resource(
+      { id: "agent-1" },
+      { url: mock.url, idempotency_key: randomUUID() },
+      {
+        fetch,
+        claimSignature: async () => {
+          events.push("claim");
+          return true;
+        },
+        treasurySignature: () => null,
+        ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+        authorize: async () => blankIntent({ amountMicros: AMOUNT }),
+        signPayment: async () => {
+          events.push("sign");
+          throw new Error("sign must not run for an amount the checks did not clear");
+        },
+        recordSettlement: async () => {
+          throw new Error("must not record a settlement that was never signed");
+        }
+      }
+    );
+    assert.equal(result.kind, "refused");
+    assert.equal(result.error, "X402_AMOUNT_MISMATCH");
+    assert.deepEqual(events, [], "neither the claim nor the signature ran");
+    assert.equal(mock.signedRequests.length, 0);
+
+    // An intent that never recorded an amount cannot be signed either.
+    const noAmount = await payX402Resource(
+      { id: "agent-1" },
+      { url: mock.url, idempotency_key: randomUUID() },
+      {
+        fetch,
+        claimSignature: async () => true,
+        treasurySignature: () => null,
+        ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+        authorize: async () => blankIntent({ amountMicros: null }),
+        signPayment: async () => { throw new Error("must not sign"); },
+        recordSettlement: async () => { throw new Error("must not record"); }
+      }
+    );
+    assert.equal(noAmount.error, "X402_AMOUNT_MISMATCH");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("when the seller cannot be reached after the signature, the intent is recorded pending, not left signable", async () => {
+  const addresses = keys();
+  const accepted = acceptedFor(addresses);
+  const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
+  let calls = 0;
+  let recorded = null;
+  const failingFetch = async (url, init) => {
+    calls += 1;
+    if (calls === 1) return fetch(url, init);
+    throw new TypeError("fetch failed");
+  };
+  try {
+    const result = await payX402Resource(
+      { id: "agent-1" },
+      { url: mock.url, idempotency_key: randomUUID() },
+      {
+        fetch: failingFetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: () => null,
+        ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+        authorize: async () => blankIntent(),
+        signPayment: async (chosen) => signExactSvmPayment(addresses.payer, chosen),
+        recordSettlement: async (intentId, settlement) => {
+          recorded = settlement;
+          return blankIntent({ id: intentId, reasonCode: "SETTLEMENT_PENDING" });
+        }
+      }
+    );
+    assert.equal(result.kind, "error");
+    assert.equal(result.error, "X402_SELLER_UNREACHABLE");
+    assert.equal(recorded.errorReason, "settlement_pending");
+    assert.equal(recorded.success, false);
+    assert.equal(result.intent.reasonCode, "SETTLEMENT_PENDING");
+  } finally {
+    await mock.close();
+  }
+});
+
+test("when signing itself fails after the claim, the intent is recorded failed, not left as 'signing'", async () => {
+  const addresses = keys();
+  const accepted = acceptedFor(addresses);
+  const mock = await startMock402({ accepted, resource: resourceInfo("http://x402.test/premium") });
+  let recorded = null;
+  try {
+    const result = await payX402Resource(
+      { id: "agent-1" },
+      { url: mock.url, idempotency_key: randomUUID() },
+      {
+        fetch,
+        claimSignature: signatureClaims(),
+        treasurySignature: () => null,
+        ensureObligation: async () => ({ recipientRef: "seller", workOrderRef: "X402-test" }),
+        authorize: async () => blankIntent(),
+        signPayment: async () => { throw new Error("SOLANA_PRIVATE_KEY_MISSING"); },
+        recordSettlement: async (intentId, settlement) => {
+          recorded = settlement;
+          return blankIntent({ id: intentId, status: "refused", decisionClass: "RED", reasonCode: "SETTLEMENT_FAILED" });
+        }
+      }
+    );
+    assert.equal(result.kind, "error");
+    assert.equal(result.error, "X402_SIGNING_FAILED");
+    assert.equal(recorded.success, false);
+    assert.equal(recorded.errorReason, "X402_SIGNING_FAILED");
+    assert.equal(mock.signedRequests.length, 0, "the seller never saw a signature");
   } finally {
     await mock.close();
   }

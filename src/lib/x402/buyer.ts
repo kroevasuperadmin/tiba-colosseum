@@ -23,8 +23,24 @@ export type X402Obligation = { recipientRef: string; workOrderRef: string };
 export type X402BuyerDeps = {
   fetch: typeof fetch;
   authorize: (agent: X402Agent, body: X402AuthorizeBody) => Promise<PublicX402Intent>;
+  /**
+   * Atomically mark the intent as being signed. Must return true exactly once per intent
+   * (a conditional update whose row count is 1), so a retried or parallel call never signs again.
+   */
+  claimSignature: (intentId: string) => Promise<boolean>;
   signPayment: (accepted: PaymentRequirements) => Promise<string>;
-  recordSettlement: (intentId: string, settlement: SettlementResponse) => Promise<PublicX402Intent>;
+  /**
+   * Record what the seller reported. `expectedSignature` is Tiba's own signature inside the
+   * transaction it signed (null when it cannot be read); a settlement is only PAID when the
+   * seller's transaction id is confirmed on chain and carries that signature.
+   */
+  recordSettlement: (
+    intentId: string,
+    settlement: SettlementResponse,
+    expectedSignature: string | null
+  ) => Promise<PublicX402Intent>;
+  /** Base58 of Tiba's own signature inside the serialized transaction signPayment returned, or null. */
+  treasurySignature: (serializedTransaction: string) => string | null;
   ensureObligation: (
     agent: X402Agent,
     accepted: PaymentRequirements,
@@ -116,7 +132,30 @@ export async function payX402Resource(
     return { kind: "refused", intent };
   }
 
-  const transaction = await deps.signPayment(accepted);
+  // The engine returns the stored intent for a repeated idempotency key without re-running the
+  // checks or the limits. So the signature must be bound to what that intent cleared: the same
+  // amount, and at most one signature ever.
+  if (!intent.amountMicros || !/^\d+$/.test(intent.amountMicros) || BigInt(accepted.amount) !== BigInt(intent.amountMicros)) {
+    return { kind: "refused", intent, error: "X402_AMOUNT_MISMATCH" };
+  }
+  if (!(await deps.claimSignature(intent.id))) {
+    return { kind: "refused", intent, error: "X402_ALREADY_SIGNED" };
+  }
+
+  let transaction: string;
+  try {
+    transaction = await deps.signPayment(accepted);
+  } catch {
+    // The claim was taken but no signature exists, so nothing can move: record the failure
+    // rather than leaving the intent stuck as "signing".
+    const recorded = await deps.recordSettlement(
+      intent.id,
+      { success: false, errorReason: "X402_SIGNING_FAILED", transaction: "", network: accepted.network },
+      null
+    );
+    return { kind: "error", error: "X402_SIGNING_FAILED", intent: recorded };
+  }
+  const expectedSignature = deps.treasurySignature(transaction);
   const retryHeaders: Record<string, string> = {
     ...(input.headers ?? {}),
     "PAYMENT-SIGNATURE": encodePaymentSignature({
@@ -131,17 +170,28 @@ export async function payX402Resource(
     retryInit.body = input.body;
   }
 
-  const second = await deps.fetch(input.url, retryInit);
+  let second: Response;
+  try {
+    second = await deps.fetch(input.url, retryInit);
+  } catch {
+    // A signature has left the building. The intent stays pending, never open for a second one.
+    const recorded = await deps.recordSettlement(
+      intent.id,
+      { success: false, errorReason: "settlement_pending", transaction: "", network: accepted.network },
+      expectedSignature
+    );
+    return { kind: "error", error: "X402_SELLER_UNREACHABLE", intent: recorded };
+  }
   let settlement: SettlementResponse;
   try {
     settlement = decodeSettlementResponse(second.headers.get("PAYMENT-RESPONSE"));
   } catch (error) {
-    const recorded = await deps.recordSettlement(intent.id, {
-      success: false,
-      errorReason: "X402_PAYMENT_RESPONSE_MISSING",
-      transaction: "",
-      network: accepted.network
-    });
+    // The seller holds a valid signature but said nothing usable about it: pending, not failed.
+    const recorded = await deps.recordSettlement(
+      intent.id,
+      { success: false, errorReason: "settlement_pending", transaction: "", network: accepted.network },
+      expectedSignature
+    );
     return {
       kind: "error",
       error: error instanceof Error ? error.message : "X402_PAYMENT_RESPONSE_INVALID",
@@ -149,7 +199,7 @@ export async function payX402Resource(
     };
   }
 
-  const recorded = await deps.recordSettlement(intent.id, settlement);
+  const recorded = await deps.recordSettlement(intent.id, settlement, expectedSignature);
   if (settlement.success) {
     return { kind: "paid", intent: recorded, status: second.status, body: await second.text(), settlement };
   }

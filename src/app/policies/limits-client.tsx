@@ -60,7 +60,7 @@ export function LimitsClient({ agent, history }: LimitsClientProps) {
           />
           <LimitRow
             title="Checks, by amount"
-            body="Under $50: one check, your own record. $50 to $250: two independent checks must agree. Over $250: a person decides. This cannot be turned off."
+            body="Under $50: at least one check, your own record. $50 to $250: two independent checks must agree. Over $250: a person decides, whatever the work order says. This cannot be turned off."
             control={<span className="text-sm text-muted">Always on</span>}
           />
         </div>
