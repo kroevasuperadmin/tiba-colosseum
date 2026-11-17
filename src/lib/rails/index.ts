@@ -22,6 +22,7 @@ export type PayoutRailErrorCode =
   | "SOLANA_NETWORK_NOT_DEVNET"
   | "SOLANA_PRIVATE_KEY_MISSING"
   | "SOLANA_ADDRESS_MISMATCH"
+  | "SOLANA_RPC_QUORUM_FAILED"
   | "SOLANA_EXECUTION_FAILED";
 
 export class PayoutRailError extends Error {
