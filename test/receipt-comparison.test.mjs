@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { explainDecision } from "../src/app/console/types.ts";
 import {
   GROWTH_LINE,
   growthHref,
@@ -48,13 +49,34 @@ test("refused receipt renders bill, record, and mismatch from stored data", () =
   assert.equal(view.mismatchedField, "work order, amount, and delivery date");
   assert.equal(view.mismatchNote, null);
 
-  const share = receiptShareLines({ decisionClass: "RED", amount: "5.00 USDC", comparison: view });
+  const share = receiptShareLines({
+    decisionClass: "RED",
+    amount: "5.00 USDC",
+    chain: "tempo",
+    comparison: view
+  });
   assert.deepEqual(share, {
     outcome: "REFUSED",
     amount: "5.00 USDC",
-    network: "Solana test network",
+    network: "Tempo testnet",
     mismatch: "work order, amount, and delivery date"
   });
+});
+
+test("share lines and decision copy identify a simulated payment without claiming a transfer", () => {
+  const comparison = receiptComparisonFromStored({ artifact: bill, payerRecord: bill });
+  const share = receiptShareLines({
+    decisionClass: "PAID",
+    amount: "5.00 USDC",
+    chain: "mock",
+    comparison
+  });
+
+  assert.equal(share.network, "Simulated, no transfer");
+  assert.equal(
+    explainDecision("PAID", null, "mock"),
+    "Both checks agreed and the limits passed. Simulated: nothing was sent."
+  );
 });
 
 test("a channel that did not run says so", () => {
@@ -83,6 +105,25 @@ test("homepage shows nothing when no refusal exists", () => {
   assert.equal(card.comparison.record.amount, "1.00 USDC");
   assert.equal(card.comparison.fields[0].bill, "WO-BILL");
   assert.equal(card.comparison.fields[0].record, "WO-RECORD");
+});
+
+test("a tuple with a blank work order is named, not shown as nothing", () => {
+  const blankBill = {
+    tupleJson: {
+      work_order_id: "",
+      amount_micros: "9000000",
+      delivery_timestamp: "2026-09-01T00:00:00.000Z"
+    }
+  };
+  const view = receiptComparisonFromStored({ artifact: blankBill, payerRecord: record });
+
+  // The channel view itself: the receipt's "Bill" panel would otherwise show an empty line.
+  assert.equal(view.bill.note, null, "the channel ran and returned a tuple -- it is not the 'did not run' case");
+  assert.equal(view.bill.workOrderId, "not found on the bill");
+
+  // The side-by-side mismatch table: same gap, same fix.
+  const workOrderField = view.fields.find((field) => field.label === "Work order");
+  assert.deepEqual(workOrderField, { label: "Work order", bill: "not found on the bill", record: "WO-RECORD" });
 });
 
 test("every receipt links onward with its own token", () => {

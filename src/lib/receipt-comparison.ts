@@ -1,4 +1,5 @@
 import { channelTuple, type ChannelTuple } from "./adjudication-display.ts";
+import { receiptNetwork } from "./receipt-network.ts";
 
 export const GROWTH_LINE =
   "Pay your own contributors with Tiba. Every payment checked, every outcome on a receipt like this one.";
@@ -55,6 +56,19 @@ function formatDelivery(iso: string): string {
   return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}, ${hour}:${minute} UTC`;
 }
 
+/** "not found on the bill"/"not found on the record": a stored tuple can carry a blank
+ *  work_order_id or amount -- a real model read that just didn't find a number, not the same as
+ *  the channel never running. Showing that as nothing renders an empty "Bill: (blank)" line;
+ *  naming the gap is honest about what the model actually reported. */
+function notFoundLabel(title: ChannelView["title"]): string {
+  return title === "The bill" ? "not found on the bill" : "not found on the record";
+}
+
+function displayField(value: string, title: ChannelView["title"]): string {
+  const trimmed = value.trim();
+  return trimmed || notFoundLabel(title);
+}
+
 function channelView(title: ChannelView["title"], intro: string, stored: StoredChannel): ParsedChannel {
   if (!stored) {
     return {
@@ -88,8 +102,8 @@ function channelView(title: ChannelView["title"], intro: string, stored: StoredC
     title,
     intro,
     note: null,
-    workOrderId: tuple.workOrderId,
-    amount: tuple.amount,
+    workOrderId: displayField(tuple.workOrderId, title),
+    amount: displayField(tuple.amount, title),
     tuple,
     delivery,
     ran: true
@@ -128,10 +142,18 @@ export function receiptComparisonFromStored(input: {
 
   if (bill.tuple && record.tuple) {
     if (bill.tuple.workOrderId !== record.tuple.workOrderId) {
-      fields.push({ label: "Work order", bill: bill.tuple.workOrderId, record: record.tuple.workOrderId });
+      fields.push({
+        label: "Work order",
+        bill: displayField(bill.tuple.workOrderId, "The bill"),
+        record: displayField(record.tuple.workOrderId, "The record")
+      });
     }
     if (bill.tuple.amount !== record.tuple.amount) {
-      fields.push({ label: "Amount", bill: bill.tuple.amount, record: record.tuple.amount });
+      fields.push({
+        label: "Amount",
+        bill: displayField(bill.tuple.amount, "The bill"),
+        record: displayField(record.tuple.amount, "The record")
+      });
     }
     if (
       bill.delivery &&
@@ -187,8 +209,9 @@ export function homepageRefusedCard(
 export function receiptShareLines(input: {
   decisionClass: string;
   amount: string;
+  chain: string | null;
   comparison: ReceiptComparison;
-}): { outcome: string; amount: string; network: "Solana test network"; mismatch: string | null } {
+}): { outcome: string; amount: string; network: string; mismatch: string | null } {
   const outcome =
     input.decisionClass === "PAID"
       ? "PAID"
@@ -200,7 +223,7 @@ export function receiptShareLines(input: {
   return {
     outcome,
     amount: input.amount,
-    network: "Solana test network",
+    network: receiptNetwork(input.chain),
     mismatch: input.decisionClass === "RED" ? input.comparison.mismatchedField : null
   };
 }

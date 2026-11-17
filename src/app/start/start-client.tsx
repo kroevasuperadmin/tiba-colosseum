@@ -69,11 +69,15 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
 
   const base = typeof window !== "undefined" ? window.location.origin : "";
 
-  const curlCommand = result
-    ? `curl -X POST "${base}/api/v1/intents" \\
+  // Per-workspace idempotency keys: the lookup is global, so a fixed key would hand
+  // every later team the first team's receipt.
+  const curlFor = (key: string, amount: string) => `curl -X POST "${base}/api/v1/intents" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer ${result.agent_key}" \\
-  -d '{"idempotency_key":"onboarding-try-1","recipient_ref":"${result.recipient_ref}","artifact":"DELIVERY NOTE\\nWork order: ${result.work_order_ref}\\nDelivered: first invoice, accepted.\\nAmount due: 5.00 USDC\\nSigned: onboarding"}'`
+  -H "Authorization: Bearer ${result!.agent_key}" \\
+  -d '{"idempotency_key":"${key}","recipient_ref":"${result!.recipient_ref}","artifact":"DELIVERY NOTE\\nWork order: ${result!.work_order_ref}\\nDelivered: first invoice, accepted.\\nAmount due: ${amount} USDC\\nSigned: onboarding"}'`;
+
+  const curlCommand = result
+    ? `# 1. A bill whose amount doesn't match your record (4.00 vs 5.00). Tiba should refuse it.\n${curlFor(`onboarding-${result.workspace_id}-wrong`, "4.00")}\n\n# 2. The right bill (5.00). Tiba should pay it.\n${curlFor(`onboarding-${result.workspace_id}-right`, "5.00")}`
     : "";
 
   const mcpSnippet = result
@@ -114,7 +118,7 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
               Your workspaces
             </Link>
           </div>
-          <h1 className="display-l mt-3">Create your wallet</h1>
+          <h1 className="display-l mt-3">Set up a workspace</h1>
           <p className="lede mt-3">
             No password, no email. One workspace, two keys, and a test payment ready to try.
           </p>
@@ -158,7 +162,7 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
               className="btn btn-primary w-full"
               disabled={busy || !name.trim()}
             >
-              {busy ? "Creating…" : "Create wallet"}
+              {busy ? "Creating…" : "Create workspace"}
             </button>
           </form>
         </>
@@ -172,7 +176,7 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
             </p>
             {result.rail === "mock" ? (
               <p className="mt-3 text-sm text-muted">
-                Payments from this wallet are simulated: nothing moves on chain. Live {CHAIN} devnet wallets
+                Payments from this workspace are simulated: nothing moves on chain. Live {CHAIN} devnet workspaces
                 need sign-in first and are limited per account and per day.
               </p>
             ) : null}
@@ -230,7 +234,7 @@ export function StartClient({ signupRef = null }: { signupRef?: string | null })
             <div className="mt-4 card p-5">
               {tab === "curl" && (
                 <div className="space-y-3">
-                  <p className="text-sm text-muted">A ready POST to <code className="text-xs">/api/v1/intents</code> with your key filled in.</p>
+                  <p className="text-sm text-muted">Two ready POSTs to <code className="text-xs">/api/v1/intents</code> with your key filled in. Run them in order: the wrong bill first (Tiba refuses it), then the right one (Tiba pays it). A refusal doesn't use up the invoice; a payment does.</p>
                   <pre className="overflow-x-auto rounded bg-background p-3 text-xs">{curlCommand}</pre>
                   <button type="button" className="btn btn-secondary" onClick={() => copy(curlCommand, "curl")}>
                     {copied === "curl" ? "Copied" : "Copy curl"}

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { microsToUsdc } from "@/lib/money";
 import { BillRecordMismatch } from "@/components/bill-record-mismatch";
 import { homepageRefusedCard } from "@/lib/receipt-comparison";
+import { EXAMPLE_PAID_INTENT_ID } from "@/lib/public-demo";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Tiba — the check before an agent's payment goes out" };
@@ -12,10 +13,6 @@ export const metadata = { title: "Tiba — the check before an agent's payment g
 function requestIdFor(adjudications: Array<{ channel: string; requestId: string | null }>, channel: string): string {
   return adjudications.find((row) => row.channel === channel)?.requestId ?? "missing";
 }
-
-// Pinned to the 11 Sep devnet payout of 0.01 USDC to recipient sol-test-0911. The newest PAID row
-// was a treasury self-pay test that moved the money back into the payer's own account.
-const EXAMPLE_PAID_INTENT_ID = "0e4d1636-dad4-4369-8fde-1e4d1fa57fc3";
 
 export default async function Home() {
   const [paidIntent, refusedIntent] = await Promise.all([
@@ -39,127 +36,38 @@ export default async function Home() {
       <SiteNav current="" />
       <div className="mx-auto flex max-w-5xl flex-col gap-12 px-4 pb-16 pt-16 md:gap-16 md:px-6 md:pt-24 lg:px-8">
         <header>
-          <p className="eyebrow">The check before a payment goes out · test network</p>
+          <p className="eyebrow">The check before a payment goes out · by Tiba · Solana devnet</p>
           <h1 className="display-xl mt-4 max-w-[20ch]">
             The check that runs before your <RotatingWord words={["AI agents", "software", "apps", "workflows"]} intervalMs={2500} /> <em>pay someone</em>.
           </h1>
           <p className="lede mt-6">
-            It reads the bill against your own record — the amount, the job, the payee — and pays
-            only when they match. When they don&apos;t, it refuses, and you get a receipt either way.
+            Tiba checks every payment an AI agent wants to make. Two separate checks look at each
+            one: one reads the bill, the other reads the payer&apos;s own record. If they don&apos;t
+            match, the payment is refused. Every decision leaves a public receipt.
+          </p>
+          <p className="lede mt-4">
+            Once agents pay bills, the bill itself becomes the attack. The check that reads your
+            record is never shown the bill, and the amount paid always comes from your record, so a
+            fake or padded bill can&apos;t raise it.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link className="btn btn-primary" href="/start">
-              Create your wallet
+            <Link className="btn btn-primary" href={refusedIntent ? `/r/${refusedIntent.publicToken}` : "/try"}>
+              See it refuse a bad bill
             </Link>
             <Link className="btn btn-secondary" href="/try">
               Try it
             </Link>
+            <Link className="btn btn-secondary" href="/wall">
+              Every check
+            </Link>
+            <Link className="btn btn-ghost" href="/developers#quickstart">
+              Quickstart
+            </Link>
             <Link className="btn btn-ghost" href="/signin">
               Sign in
             </Link>
-            <Link className="btn btn-ghost" href="/app">
-              See the demo wallet
-            </Link>
-            <Link className="btn btn-ghost" href="/permissions">
-              Explore permissions
-            </Link>
           </div>
         </header>
-
-        <section className="border-t border-line pt-12">
-          <p className="eyebrow">Eval of an earlier build, 29 Aug 2026, on a mock settlement rail. Not live figures.</p>
-          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
-            <div>
-              <p className="num display-l">20 / 20</p>
-              <p className="eyebrow mt-2">honest notes paid</p>
-            </div>
-            <div>
-              <p className="num display-l">10 / 10</p>
-              <p className="eyebrow mt-2">tampered notes refused</p>
-            </div>
-            <div>
-              <p className="num display-l">0 / 20</p>
-              <p className="eyebrow mt-2">false refusals</p>
-            </div>
-            <div>
-              <p className="num display-l">13 s</p>
-              <p className="eyebrow mt-2">mean per decision</p>
-            </div>
-          </div>
-          <p className="lede mt-8 text-sm text-muted">
-            18 rivals checked, 25 Sep 2026 — Coinbase, Stripe, Squads, and thirteen YC companies.
-            None refuses a wrong bill automatically (one mentions checking invoices, and a person
-            still approves). 0 of 17 give a receipt for a refusal.
-          </p>
-        </section>
-
-        <section className="border-t border-line pt-12">
-          <p className="eyebrow">Your control, made explicit</p>
-          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
-            <div>
-              <p className="num display-l">01</p>
-              <p className="eyebrow mt-2">plain-English instruction</p>
-            </div>
-            <div>
-              <p className="num display-l">02</p>
-              <p className="eyebrow mt-2">human confirmation</p>
-            </div>
-            <div>
-              <p className="num display-l">03</p>
-              <p className="eyebrow mt-2">signed permission</p>
-            </div>
-            <div>
-              <p className="num display-l">04</p>
-              <p className="eyebrow mt-2">checkable receipt</p>
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t border-line pt-12">
-          <p className="eyebrow">How it works</p>
-          <ol className="mt-8 grid gap-8 md:grid-cols-3">
-            <li>
-              <p className="num text-sm text-muted">01</p>
-              <p className="lede mt-3">
-                Write what your agent may do in the language you already use.
-              </p>
-            </li>
-            <li>
-              <p className="num text-sm text-muted">02</p>
-              <p className="lede mt-3">
-                Review the scope, budget, and expiry. You choose whether to sign.
-              </p>
-            </li>
-            <li>
-              <p className="num text-sm text-muted">03</p>
-              <p className="lede mt-3">
-                The agent stays inside that permission and leaves a signed receipt behind.
-              </p>
-            </li>
-          </ol>
-          <div className="mt-10 space-y-4">
-            <p className="lede">
-              A permission slip says exactly what is allowed, how much may be spent, and when it stops.
-            </p>
-            <p className="lede">
-              Revoke it when the task changes. New actions stop at the boundary you set.
-            </p>
-            <p className="lede">
-              Every outcome is a receipt that can be checked independently, without trusting a dashboard.
-            </p>
-            <p className="lede">The wallet stays: agents still pay from it within the limits you set.</p>
-            <p className="lede">
-              Around it sit limits you set and your software can only read: a per-payment
-              ceiling, hourly and daily spending limits, a list of saved recipients, and a freeze.
-            </p>
-            <p className="lede">
-              Most agent-payment plumbing, including x402 — the protocol AWS, Cloudflare, Circle,
-              and Coinbase now share — leaves the approval decision out of scope. The wallet is
-              supposed to decide whether a payment may go out at all. That check is what Tiba
-              runs, before any signature.
-            </p>
-          </div>
-        </section>
 
         <section className="border-t border-line pt-12">
           <p className="eyebrow">A real example</p>
@@ -177,8 +85,8 @@ export default async function Home() {
               <div className="card p-5">
                 <span className="pill pill-paid">Paid</span>
                 <p className="mt-3 text-sm">
-                  <span className="num">{microsToUsdc(paidIntent.amountMicros)}</span> sent to a
-                  separate recipient wallet on the test network. No real money moved.
+                  <span className="num">{microsToUsdc(paidIntent.amountMicros)}</span> sent on Solana
+                  devnet. No real money moved.
                 </p>
                 <p className="eyebrow mt-4">Transaction</p>
                 {paidIntent.explorerUrl ? (
@@ -211,24 +119,107 @@ export default async function Home() {
         </section>
 
         <section className="border-t border-line pt-12">
+          <p className="eyebrow">Eval of an earlier build, 29 Aug 2026, on a mock settlement rail. Not live figures.</p>
+          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
+            <div>
+              <p className="num display-l">20 / 20</p>
+              <p className="eyebrow mt-2">honest notes paid</p>
+            </div>
+            <div>
+              <p className="num display-l">10 / 10</p>
+              <p className="eyebrow mt-2">tampered notes refused</p>
+            </div>
+            <div>
+              <p className="num display-l">0 / 20</p>
+              <p className="eyebrow mt-2">false refusals</p>
+            </div>
+            <div>
+              <p className="num display-l">13 s</p>
+              <p className="eyebrow mt-2">mean per decision</p>
+            </div>
+          </div>
+          <p className="lede mt-8 text-sm text-muted">
+            Every check, paid or refused, gets a public receipt anyone can open by link.
+          </p>
+        </section>
+
+        <section className="border-t border-line pt-12">
+          <p className="eyebrow">Two checks, then a receipt</p>
+          <div className="mt-6 grid grid-cols-2 gap-8 md:grid-cols-4">
+            <div>
+              <p className="num display-l">01</p>
+              <p className="eyebrow mt-2">one check reads the bill</p>
+            </div>
+            <div>
+              <p className="num display-l">02</p>
+              <p className="eyebrow mt-2">one check reads your record</p>
+            </div>
+            <div>
+              <p className="num display-l">03</p>
+              <p className="eyebrow mt-2">refused if they don&apos;t match</p>
+            </div>
+            <div>
+              <p className="num display-l">04</p>
+              <p className="eyebrow mt-2">public receipt</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-t border-line pt-12">
+          <p className="eyebrow">How it works</p>
+          <ol className="mt-8 grid gap-8 md:grid-cols-3">
+            <li>
+              <p className="num text-sm text-muted">01</p>
+              <p className="lede mt-3">
+                You keep a record of what you owe: the job, the amount, the payee.
+              </p>
+            </li>
+            <li>
+              <p className="num text-sm text-muted">02</p>
+              <p className="lede mt-3">
+                When a bill comes in, Tiba reads it and checks it against your record before anything
+                is signed.
+              </p>
+            </li>
+            <li>
+              <p className="num text-sm text-muted">03</p>
+              <p className="lede mt-3">
+                If it names a different job or payee, it refuses. Otherwise it pays the amount your
+                record approved, never the bill&apos;s. You get a receipt either way.
+              </p>
+            </li>
+          </ol>
+          <div className="mt-10 space-y-4">
+            <p className="lede">
+              One check reads the bill. The other reads the payer&apos;s own record and is never shown
+              the bill. They have to name the same job and the same amount.
+            </p>
+            <p className="lede">
+              If they don&apos;t match, Tiba refuses the payment. If they match, it can go out. Either
+              way there is a public receipt. Test money only — Solana devnet, no real money.
+            </p>
+          </div>
+        </section>
+
+        <section className="border-t border-line pt-12">
           <p className="eyebrow">Signed outcomes</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="card p-5">
               <span className="pill pill-paid">Recorded</span>
               <p className="mt-3 text-sm">
-                A permitted notes action and a live <span className="num">0.01 USDC</span> Solana devnet payment each leave a signed receipt.
+                A payment the two checks agree on leaves a public receipt. The live examples are Solana devnet.
               </p>
-              <Link className="btn btn-ghost mt-3" href="/receipts">
-                See signed receipts →
+              <Link className="btn btn-ghost mt-3" href="/wall">
+                See the wall of checks →
               </Link>
             </div>
             <div className="card p-5">
               <span className="pill pill-refused">Refused</span>
               <p className="mt-3 text-sm">
-                An action outside the permission is refused before it goes out. The refusal is signed, too.
+                A payment the two checks don&apos;t agree on is refused before anything is sent. That refusal has a public receipt too.
               </p>
-              <Link className="btn btn-ghost mt-3" href="/verify">
-                Verify a receipt →
+              <Link className="btn btn-ghost mt-3" href="/try">
+                Try a mismatched bill →
               </Link>
             </div>
           </div>

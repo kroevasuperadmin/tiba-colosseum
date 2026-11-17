@@ -1,3 +1,4 @@
+import { amountAskedMicros } from "./asked-amount.ts";
 import { microsToUsdc } from "./money.ts";
 import { receiptNetwork } from "./receipt-network.ts";
 
@@ -26,9 +27,20 @@ export type WallRow = {
 export type RefusalWall = {
   checksRun: number;
   paid: number;
+  simulatedPaid: number;
   refused: number;
-  refusedAmount: string;
+  /** Of `refused`, how many named a real (nonzero) amount asked for -- older refusals from
+   *  before an amount was ever attached, and many gate refusals (no open invoice, wrong
+   *  recipient), never had one. */
+  refusedWithAmount: number;
+  /** Sum over refusedWithAmount only. Null when refusedWithAmount is 0: there is nothing to
+   *  add up, and "0.00 USDC" would misreport that as a real total instead of "no data yet". */
+  refusedAmount: string | null;
   rows: WallRow[];
+};
+
+export type RefusalWallTotals = Omit<RefusalWall, "refusedAmount" | "rows"> & {
+  refusedAmountMicros: bigint | string | null;
 };
 
 const NOT_READ = "not read";
@@ -55,7 +67,7 @@ function publicRefusalReason(reasonCode: string | null): string {
     case "RECIPIENT_NOT_FOUND": return "This recipient is not saved.";
     case "RECIPIENT_INACTIVE": return "This recipient is saved but blocked.";
     case "RECIPIENT_UNVERIFIED": return "This recipient's identity is not verified, and your limits require it.";
-    case "KILL_SWITCH": return "The wallet is frozen.";
+    case "KILL_SWITCH": return "Payments are frozen.";
     case "INVALID_AMOUNT": return "The amount in this request was not valid.";
     case "INVALID_TIMESTAMP": return "A date in this request was not valid.";
     case "RECIPIENT_NEEDS_SOLANA_ADDRESS": return "Recipient needs a Solana address.";
@@ -181,7 +193,11 @@ function outcomeFor(decisionClass: unknown): { outcome: WallOutcome; outcomeLabe
   return null;
 }
 
-type Prepared = WallRow & { at: number; refusedMicros: bigint };
+type Prepared = WallRow & { at: number; refusedMicros: bigint; simulated: boolean };
+
+export function isSimulatedSettlement(chain: string | null): boolean {
+  return chain === "mock" || chain === "sandbox" || chain === null;
+}
 
 function prepare(input: unknown): Prepared | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
@@ -191,42 +207,68 @@ function prepare(input: unknown): Prepared | null {
   const at = asDate(row.createdAt);
   if (!token || !outcome || !at) return null;
 
-  const micros = parseMicros(row.amountMicros) ?? 0n;
+  const storedMicros = parseMicros(row.amountMicros) ?? 0n;
+  // A refusal often stores 0 because it never reached a debit. The amount asked for
+  // is what the bill said. Showing 0.00 would hide that ask.
+  const asked = outcome.outcome === "REFUSED"
+    ? amountAskedMicros(row.amountMicros, row.adjudications)
+    : storedMicros;
   const reasonCode = typeof row.reasonCode === "string" ? row.reasonCode : null;
   const mismatch = outcome.outcome === "REFUSED" ? mismatchFor(reasonCode, row.adjudications) : null;
   const reason = outcome.outcome === "REFUSED" && !mismatch
     ? publicRefusalReason(reasonCode)
     : null;
+  const rawChain = typeof row.chain === "string" ? row.chain : null;
 
   return {
     outcome: outcome.outcome,
     outcomeLabel: outcome.outcomeLabel,
-    amount: microsToUsdc(micros),
-    chain: receiptNetwork(typeof row.chain === "string" ? row.chain : null),
+    amount: outcome.outcome === "REFUSED" && asked === null ? "Not read" : microsToUsdc(asked ?? 0n),
+    chain: receiptNetwork(rawChain),
     time: formatWallTime(at),
     timeIso: at.toISOString(),
     href: `/r/${token}`,
     mismatch,
     reason,
     at: at.getTime(),
-    refusedMicros: outcome.outcome === "REFUSED" ? micros : 0n
+    refusedMicros: outcome.outcome === "REFUSED" ? (asked ?? 0n) : 0n,
+    simulated: isSimulatedSettlement(rawChain)
   };
 }
 
-export function buildRefusalWall(records: readonly unknown[]): RefusalWall {
+export function buildRefusalWall(
+  records: readonly unknown[],
+  aggregateTotals?: RefusalWallTotals
+): RefusalWall {
   const prepared = records
     .map(prepare)
     .filter((row): row is Prepared => row !== null)
     .sort((a, b) => b.at - a.at || b.href.localeCompare(a.href));
 
-  const refusedMicros = prepared.reduce((sum, row) => sum + row.refusedMicros, 0n);
-  const rows: WallRow[] = prepared.map(({ at: _at, refusedMicros: _refused, ...row }) => row);
+  const withAmount = prepared.filter((row) => row.refusedMicros > 0n);
+  const refusedMicros = withAmount.reduce((sum, row) => sum + row.refusedMicros, 0n);
+  const rows: WallRow[] = prepared.map(
+    ({ at: _at, refusedMicros: _refused, simulated: _simulated, ...row }) => row
+  );
+  const aggregateRefusedMicros = aggregateTotals
+    ? parseMicros(aggregateTotals.refusedAmountMicros)
+    : null;
 
   return {
-    checksRun: rows.length,
-    paid: rows.filter((row) => row.outcome === "PAID").length,
-    refused: rows.filter((row) => row.outcome === "REFUSED").length,
-    refusedAmount: microsToUsdc(refusedMicros),
+    checksRun: aggregateTotals?.checksRun ?? rows.length,
+    paid: aggregateTotals?.paid ??
+      prepared.filter((row) => row.outcome === "PAID" && !row.simulated).length,
+    simulatedPaid: aggregateTotals?.simulatedPaid ??
+      prepared.filter((row) => row.outcome === "PAID" && row.simulated).length,
+    refused: aggregateTotals?.refused ?? rows.filter((row) => row.outcome === "REFUSED").length,
+    refusedWithAmount: aggregateTotals?.refusedWithAmount ?? withAmount.length,
+    refusedAmount: aggregateTotals
+      ? aggregateTotals.refusedWithAmount > 0 && aggregateRefusedMicros !== null
+        ? microsToUsdc(aggregateRefusedMicros)
+        : null
+      : withAmount.length > 0
+        ? microsToUsdc(refusedMicros)
+        : null,
     rows
   };
 }
@@ -236,8 +278,9 @@ export function visibleWallText(wall: RefusalWall): string {
   const lines = [
     String(wall.checksRun),
     String(wall.paid),
+    String(wall.simulatedPaid),
     String(wall.refused),
-    wall.refusedAmount,
+    wall.refusedAmount ?? "",
     "test money",
     ...wall.rows.flatMap((row) => [
       row.outcomeLabel,

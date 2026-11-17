@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DenialBanner } from "@/components/denial-banner";
-import { formatLatency, microsToUsdc } from "@/lib/money";
+import { formatLatency } from "@/lib/money";
 import { prisma } from "@/lib/db";
 import { channelTuple, type ChannelTuple } from "@/lib/adjudication-display";
 import { GROWTH_LINE, growthHref, receiptComparisonFromStored, receiptShareLines } from "@/lib/receipt-comparison";
@@ -11,8 +11,10 @@ import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
-import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { receiptAmountLines } from "@/lib/asked-amount";
+import { coinSymbol, microsToCoin, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
+import { limitsStatus } from "@/lib/receipt-status";
 
 export const dynamic = "force-dynamic";
 
@@ -24,18 +26,22 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   });
   if (!intent) return { title: "Receipt - Tiba" };
 
+  const asked = receiptAmountLines({
+    paid: intent.decisionClass === "PAID",
+    amountMicros: intent.amountMicros,
+    adjudications: intent.adjudications
+  });
   const share = receiptShareLines({
     decisionClass: intent.decisionClass,
-    amount: microsToUsdc(intent.amountMicros),
+    amount: asked.unread || asked.micros === null ? "Not read" : microsToCoin(asked.micros, intent.chain),
+    chain: intent.chain,
     comparison: receiptComparisonFromStored({
       artifact: intent.adjudications.find((row) => row.channel === "artifact") ?? null,
       payerRecord: intent.adjudications.find((row) => row.channel === "payer_record") ?? null
     })
   });
   const title = `${share.outcome} · ${share.amount}`;
-  const description = share.mismatch
-    ? `Solana test network. Mismatch: ${share.mismatch}.`
-    : "Solana test network.";
+  const description = `${share.network}.${share.mismatch ? ` Mismatch: ${share.mismatch}.` : ""}`;
 
   return {
     title: "Receipt - Tiba",
@@ -43,23 +49,6 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
     openGraph: { title, description },
     twitter: { card: "summary_large_image", title, description }
   };
-}
-
-function formatTime(date: Date | null): string {
-  if (!date) return "time unknown";
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "short"
-  }).format(date);
-}
-
-function remainingBudget(dayCapMicros: bigint, spentMicrosDay: bigint): string {
-  const remaining = dayCapMicros > spentMicrosDay ? dayCapMicros - spentMicrosDay : 0n;
-  return microsToUsdc(remaining);
 }
 
 export default async function ReceiptPage({ params }: { params: Promise<{ token: string }> }) {
@@ -83,9 +72,19 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   const adjudicationsByChannel = new Map(intent.adjudications.map((row) => [row.channel, row]));
   const paid = intent.decisionClass === "PAID";
 
-  // Get channel tuples for disagreement line
-  const channelATuple = channelTuple(adjudicationsByChannel.get("artifact")?.tupleJson);
-  const channelBTuple = channelTuple(adjudicationsByChannel.get("payer_record")?.tupleJson);
+  // Get channel tuples for disagreement line. A model can return a tuple with a blank
+  // work_order_id -- a real read that just didn't find a number, not the same as no read at
+  // all -- so a blank field is named rather than left empty ("saw invoice , 480.00").
+  function withoutBlankFields(tuple: ChannelTuple, side: "bill" | "record"): ChannelTuple {
+    if (!tuple) return tuple;
+    const label = side === "bill" ? "not found on the bill" : "not found on the record";
+    return {
+      workOrderId: tuple.workOrderId.trim() || label,
+      amount: tuple.amount.trim() || label
+    };
+  }
+  const channelATuple = withoutBlankFields(channelTuple(adjudicationsByChannel.get("artifact")?.tupleJson), "bill");
+  const channelBTuple = withoutBlankFields(channelTuple(adjudicationsByChannel.get("payer_record")?.tupleJson), "record");
   const disagreement = disagreementLine(intent.reasonCode, channelATuple, channelBTuple);
   const refusedComparison =
     intent.decisionClass === "RED"
@@ -113,21 +112,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     if (!tupleA || !tupleB) return "Not run";
     if (tupleA.workOrderId === tupleB.workOrderId && tupleA.amount === tupleB.amount) return "Yes";
     return "No";
-  }
-
-  // Determine policy status
-  function getPolicyStatus(reasonCode: string | null): string {
-    const policyRefusalCodes = [
-      "DAY_AMOUNT_CAP", "DAY_COUNT_CAP", "HOUR_AMOUNT_CAP", "HOUR_COUNT_CAP",
-      "TRANSACTION_CEILING", "WORK_ORDER_CEILING", "WORK_ORDER_EXPIRED",
-      "WORK_ORDER_NOT_OPEN", "NO_OPEN_OBLIGATION", "RECIPIENT_INACTIVE",
-      "RECIPIENT_NOT_FOUND", "KILL_SWITCH", "RECIPIENT_UNVERIFIED", "RECIPIENT_NEEDS_SOLANA_ADDRESS",
-      "RECIPIENT_NEEDS_TEMPO_ADDRESS",
-      "INVALID_AMOUNT", "INVALID_TIMESTAMP"
-    ];
-
-    if (policyRefusalCodes.includes(reasonCode || "")) return "Blocked";
-    return "Passed";
   }
 
   // Identity gate is per agent (default off) and sits before inference. No per-intent
@@ -172,6 +156,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
     payerModel: payerRow?.ok ? payerRow.model : null
   });
   const sameModelNote = receiptSameModelNote(Boolean(artifactRow?.sameMaker || payerRow?.sameMaker));
+  const limits = limitsStatus(intent.decisionClass, intent.reasonCode);
+
+  // A refusal before the limits never stores the amount (it stays 0), so show what the
+  // bill asked for when Check 1 read it, instead of a false 0.00.
+  const askedAmount = receiptAmountLines({
+    paid,
+    amountMicros: intent.amountMicros,
+    adjudications: intent.adjudications
+  });
+  const amountLabel = askedAmount.label;
+  const amountValue = askedAmount.digits;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -191,10 +186,15 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             {paid ? <p className="mt-2 text-sm text-muted">Paid on {network}.</p> : null}
           </div>
           <div className="card p-4 md:min-w-72">
-            <p className="text-sm text-muted">{paid ? "Amount" : "Amount asked for"}</p>
+            <p className="text-sm text-muted">{amountLabel}</p>
             <p className="num mt-1 text-2xl">
-              {microsToUsdc(intent.amountMicros).replace(/ USDC$/, "")}{" "}
-              <span className="text-sm text-muted">USDC</span>
+              {amountValue}
+              {!askedAmount.unread ? (
+                <>
+                  {" "}
+                  <span className="text-sm text-muted">{coinSymbol(intent.chain)}</span>
+                </>
+              ) : null}
             </p>
           </div>
         </header>
@@ -208,13 +208,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             <p className="title text-muted">Bounty</p>
             <p className="mt-2 text-xl font-semibold">{bountyClaim.bounty.title}</p>
             <p className="mt-1 text-sm text-muted">
-              Asked: <span className="num">{microsToUsdc(bountyClaim.amountAskedMicros)}</span>
+              Asked: <span className="num">{microsToCoin(bountyClaim.amountAskedMicros, intent.chain)}</span>
             </p>
             <p className="mt-1 text-sm text-muted">Claimed: {bountyClaim.summary}</p>
           </section>
         ) : null}
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-2">
           <Fact
             label={paid ? "Paid to" : "To"}
             value={intent.recipient.displayName}
@@ -222,12 +222,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           />
           <Fact
             label="Why"
-            value={explainDecision(intent.decisionClass, intent.reasonCode)}
-          />
-          <Fact
-            label="Left to spend today (live)"
-            value={remainingBudget(intent.agent.dayCapMicros, intent.agent.spentMicrosDay)}
-            detail="right now, not at the time of this receipt"
+            value={explainDecision(intent.decisionClass, intent.reasonCode, intent.chain)}
           />
         </section>
 
@@ -304,8 +299,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Your limits</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode)}</td>
-                <td className="py-3 px-3">{getPolicyStatus(intent.reasonCode) === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
+                <td className="py-3 px-3">{limits}</td>
+                <td className="py-3 px-3">{limits === "Blocked" ? explainDecision(intent.decisionClass, intent.reasonCode) : "—"}</td>
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Identity check</td>
@@ -337,22 +332,6 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               ) : null}
             </tbody>
           </table>
-          </div>
-        </section>
-
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="card p-5">
-            <h2 className="title">Verification cost (GNK/USD)</h2>
-            {intent.gnkUsd ? (
-              <p className="num mt-3 text-2xl">
-                ${intent.gnkUsd}
-                <span className="ml-2 align-middle text-sm font-medium text-muted">
-                  at {formatTime(intent.pricingUpdatedAt)}
-                </span>
-              </p>
-            ) : (
-              <p className="mt-3 text-sm text-muted">price not available</p>
-            )}
           </div>
         </section>
 

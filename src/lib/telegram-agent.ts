@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Agent } from "@prisma/client";
 import { PublicKey } from "@solana/web3.js";
 import { prisma } from "@/lib/db";
@@ -222,7 +222,7 @@ async function pay(chatId: string, agent: Agent, recipientRef: string, workOrder
     requiredChannels === "human"
       ? "Over $250 — this needs a person to decide, not a check."
       : requiredChannels === "both"
-        ? "Two checks running through GonkaRouter. Neither sees the other's answer."
+        ? "Two checks run, each reading a different source. Neither sees the other's answer."
         : "Under $50 — one check, against your own record.";
 
   let result = null as Awaited<ReturnType<typeof processPayoutIntent>> | null;
@@ -232,7 +232,7 @@ async function pay(chatId: string, agent: Agent, recipientRef: string, workOrder
       attempt === 1 ? firstCheckLine : `A check did not come back. Running them again (${attempt}/3).`
     );
     result = await processPayoutIntent(agent, {
-      idempotency_key: `tg-${Date.now()}-${attempt}`,
+      idempotency_key: `tg-${randomUUID()}`,
       artifact,
       recipient_ref: recipientRef
     });

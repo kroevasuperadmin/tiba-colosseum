@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { CANDIDATES } from "../src/lib/gonka.ts";
 import { artifactDecisionSchema, artifactSystemPrompt, payerRecordDecisionSchema, payerRecordSystemPrompt } from "../src/lib/prompts.ts";
 import { readSandboxChannels } from "../src/lib/fool-it-read.ts";
 import {
@@ -9,7 +10,8 @@ import {
   SANDBOX_AMOUNT_USDC,
   SANDBOX_WORK_ORDER_ID,
   SANDBOX_WRONG_AMOUNT_USDC,
-  SANDBOX_WRONG_WORK_ORDER_ID
+  SANDBOX_WRONG_WORK_ORDER_ID,
+  sandboxBillText
 } from "../src/lib/fool-it-sample.ts";
 import {
   FOOL_IT_DEPLOYMENT_TRIES_PER_DAY,
@@ -111,7 +113,7 @@ test("mismatch -> refused receipt", async () => {
   assert.equal(row.intent.reasonCode, "QUORUM_SPLIT:work_order_id");
   assert.equal(row.intent.digest, null);
   assert.equal(row.intent.explorerUrl, null);
-  assert.equal(row.intent.chain, null);
+  assert.equal(row.intent.chain, "sandbox");
   assert.equal(row.intent.x402Routed, false);
   assert.equal(row.intent.amountMicros, 9_000_000n);
   assert.equal(row.artifact.rawText, draft.billText);
@@ -335,6 +337,18 @@ test("the sandbox reader uses the live prompts and keeps the bill off the payer 
   assert.deepEqual(messages.payer, seen[1].messages);
 });
 
+test("sandbox reader failures name the configured Groq candidates, not retired models", async () => {
+  const result = await readSandboxChannels(
+    { billText: "BILL-MARK-9.50", receivedAt: RECEIVED },
+    async () => {
+      throw new Error("reader unavailable");
+    }
+  );
+
+  assert.equal(result.artifact.model, CANDIDATES.artifact[0]);
+  assert.equal(result.payer.model, CANDIDATES.payer_record[0]);
+});
+
 test("the sandbox workspace cannot be a payable wallet", () => {
   const plan = sandboxWorkspacePlan(new Date("2026-09-26T00:00:00.000Z"), "hash-only");
   assert.equal(plan.agent.rail, "mock");
@@ -368,4 +382,42 @@ test("the sandbox path does not call a payout rail", () => {
     assert.equal(source.includes("PRIVATE_KEY"), false, file);
     assert.equal(source.includes("SOLANA_PRIVATE_KEY"), false, file);
   }
+});
+
+test("the bill text states the work order on its own labelled line", () => {
+  const text = sandboxBillText("WO-FAKE-999", "9.00");
+  assert.match(text, /^Work order: WO-FAKE-999$/m);
+  assert.match(text, /^Amount due: 9\.00 USDC$/m);
+});
+
+test("a blank work order read from a changed bill is named, not left blank", async () => {
+  const store = new Map();
+  const { run } = attempt({
+    store,
+    read: () => ({
+      // The reading model returned a tuple, but couldn't find a work order in the edited bill --
+      // a real, if unhelpful, answer, not the same as the channel failing outright.
+      artifact: channel({ workOrderId: "", amountMicros: "9000000" }),
+      payer: recordChannel()
+    })
+  });
+  const result = await run({ workOrderId: SANDBOX_WRONG_WORK_ORDER_ID, amount: "9.00" });
+  assert.equal(result.outcome, "refused");
+  assert.equal(result.bill.workOrderId, "not found on the bill");
+  assert.match(result.mismatch, /not found on the bill/);
+  assert.doesNotMatch(result.mismatch, /saw invoice ,/);
+});
+
+test("a blank work order read from the payer record is named on that side instead", async () => {
+  const store = new Map();
+  const { run } = attempt({
+    store,
+    read: () => ({
+      artifact: channel({ workOrderId: SANDBOX_WRONG_WORK_ORDER_ID, amountMicros: "9000000" }),
+      payer: channel({ workOrderId: "", amountMicros: SANDBOX_AMOUNT_MICROS })
+    })
+  });
+  const result = await run({ workOrderId: SANDBOX_WRONG_WORK_ORDER_ID, amount: "9.00" });
+  assert.equal(result.outcome, "refused");
+  assert.equal(result.record.workOrderId, "not found on the record");
 });

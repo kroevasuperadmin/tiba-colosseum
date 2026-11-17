@@ -1,7 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "./db.ts";
-import { getGnkUsdRate } from "./gonka-pricing.ts";
 import type { RefusalDraft } from "./fool-it.ts";
 import { refusalRecord, sandboxWorkspacePlan } from "./fool-it.ts";
 import { SANDBOX_AGENT_ID, SANDBOX_RECIPIENT_ID, SANDBOX_WORK_ORDER_ROW_ID } from "./fool-it-sample.ts";
@@ -59,21 +58,11 @@ export async function saveSandboxRefusal(draft: RefusalDraft): Promise<{ publicT
   await ensureSandboxWorkspace();
   const publicToken = randomUUID();
   const row = refusalRecord(draft, publicToken, `fool-it-${publicToken}`);
-  let gnkUsd: string | null = null;
-  let pricingUpdatedAt: Date | null = null;
-  try {
-    const rate = await getGnkUsdRate();
-    gnkUsd = rate?.value ?? null;
-    pricingUpdatedAt = rate?.updatedAt ?? null;
-  } catch {
-    gnkUsd = null;
-    pricingUpdatedAt = null;
-  }
   const intent = await prisma.payoutIntent.create({
     data: {
       ...row.intent,
-      gnkUsd,
-      pricingUpdatedAt,
+      gnkUsd: null,
+      pricingUpdatedAt: null,
       artifact: { create: row.artifact },
       adjudications: {
         create: row.adjudications.map((entry) => ({

@@ -1,15 +1,23 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import type { Agent, Bounty } from "@prisma/client";
+import type { Agent, Bounty, BountyClaim } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { processPayoutIntent, type ProcessPayoutOptions, type PublicIntent } from "@/lib/payout-intent";
 import {
   buildBountyPayerRecord,
   buildClaimArtifactText,
+  bountyStatusAfter,
   evaluateClaimGate,
+  requiredChannelsForBounty,
   type ClaimGateReason
 } from "@/lib/bounty-claim-gate";
 
-export { evaluateClaimGate, buildBountyPayerRecord, buildClaimArtifactText } from "@/lib/bounty-claim-gate";
+export {
+  bountyStatusAfter,
+  buildBountyPayerRecord,
+  buildClaimArtifactText,
+  evaluateClaimGate,
+  requiredChannelsForBounty
+} from "@/lib/bounty-claim-gate";
 export type { ClaimGateReason, ClaimGateResult, ClaimInput, BountyForGate, BountyForRecord } from "@/lib/bounty-claim-gate";
 
 function shortCode(): string {
@@ -31,6 +39,52 @@ function refuseClaim(intentId: string, reasonCode: ClaimGateReason) {
     where: { id: intentId },
     data: { status: "refused", decisionClass: "RED", reasonCode }
   });
+}
+
+async function recordRefusedClaim(
+  agent: Agent,
+  bounty: Bounty,
+  claim: BountyClaim,
+  recipientId: string,
+  reasonCode: ClaimGateReason
+): Promise<{ claimId: string; intent: PublicIntent }> {
+  const artifact = buildClaimArtifactText(bounty, claim);
+  const intent = await prisma.payoutIntent.create({
+    data: {
+      agentId: agent.id,
+      recipientId,
+      status: "processing",
+      decisionClass: "AMBER",
+      idempotencyKey: `bounty-claim:${claim.id}`,
+      publicToken: randomUUID(),
+      artifact: {
+        create: {
+          rawText: artifact,
+          sha256: createHash("sha256").update(artifact).digest("hex")
+        }
+      }
+    }
+  });
+  const refused = await refuseClaim(intent.id, reasonCode);
+  await prisma.bountyClaim.update({
+    where: { id: claim.id },
+    data: { payoutIntentId: intent.id }
+  });
+  return {
+    claimId: claim.id,
+    intent: {
+      id: refused.id,
+      status: refused.status,
+      decisionClass: refused.decisionClass,
+      reasonCode: refused.reasonCode,
+      digest: refused.digest,
+      explorerUrl: refused.explorerUrl,
+      publicToken: refused.publicToken,
+      chain: refused.chain,
+      signature: refused.digest,
+      x402Routed: refused.x402Routed
+    }
+  };
 }
 
 export interface SubmitClaimOptions {
@@ -80,35 +134,15 @@ export async function submitBountyClaim(
 
   const gate = evaluateClaimGate(bounty, input);
   if (!gate.ok) {
-    const artifact = buildClaimArtifactText(bounty, claim);
-    const intent = await prisma.payoutIntent.create({
-      data: {
-        agentId: agent.id,
-        recipientId: recipient.id,
-        status: "processing",
-        decisionClass: "AMBER",
-        idempotencyKey: `bounty-claim:${claim.id}`,
-        publicToken: randomUUID(),
-        artifact: { create: { rawText: artifact, sha256: createHash("sha256").update(artifact).digest("hex") } }
-      }
-    });
-    const refused = await refuseClaim(intent.id, gate.reasonCode);
-    await prisma.bountyClaim.update({ where: { id: claim.id }, data: { payoutIntentId: intent.id } });
-    return {
-      claimId: claim.id,
-      intent: {
-        id: refused.id,
-        status: refused.status,
-        decisionClass: refused.decisionClass,
-        reasonCode: refused.reasonCode,
-        digest: refused.digest,
-        explorerUrl: refused.explorerUrl,
-        publicToken: refused.publicToken,
-        chain: refused.chain,
-        signature: refused.digest,
-        x402Routed: refused.x402Routed
-      }
-    };
+    return recordRefusedClaim(agent, bounty, claim, recipient.id, gate.reasonCode);
+  }
+
+  const locked = await prisma.bounty.updateMany({
+    where: { id: bounty.id, status: "open" },
+    data: { status: "paying" }
+  });
+  if (locked.count !== 1) {
+    return recordRefusedClaim(agent, bounty, claim, recipient.id, "BOUNTY_CLOSED");
   }
 
   const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
@@ -119,7 +153,7 @@ export async function submitBountyClaim(
       ceilingMicros: bounty.amountMicros,
       briefText: `${bounty.title} — ${bounty.doneCriteria}`,
       payerRecord: buildBountyPayerRecord(bounty, claim.id, input.amountAskedMicros),
-      requiredChannels: "both",
+      requiredChannels: requiredChannelsForBounty(bounty),
       expiresAt,
       status: "open"
     }
@@ -131,6 +165,10 @@ export async function submitBountyClaim(
     recipient_ref: recipient.ref
   }, options.gonka ? { gonka: options.gonka } : {});
 
+  await prisma.bounty.update({
+    where: { id: bounty.id },
+    data: { status: bountyStatusAfter(intent) }
+  });
   await prisma.bountyClaim.update({ where: { id: claim.id }, data: { payoutIntentId: intent.id } });
   return { claimId: claim.id, intent };
 }
