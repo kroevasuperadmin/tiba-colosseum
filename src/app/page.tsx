@@ -4,6 +4,7 @@ import { SiteNav } from "@/components/site-nav";
 import { prisma } from "@/lib/db";
 import { microsToUsdc } from "@/lib/money";
 import { channelTuple } from "@/lib/adjudication-display";
+import { receiptCoinSymbol } from "@/lib/receipt-network";
 import { disagreementLine } from "@/app/console/types";
 
 export const dynamic = "force-dynamic";
@@ -181,8 +182,10 @@ export default async function Home() {
               <div className="card p-5">
                 <span className="pill pill-paid">Paid</span>
                 <p className="mt-3 text-sm">
-                  <span className="num">{microsToUsdc(paidIntent.amountMicros)}</span> sent to a
-                  separate recipient wallet on the test network. No real money moved.
+                  <span className="num">
+                    {microsToUsdc(paidIntent.amountMicros).replace(/ USDC$/, "")} {receiptCoinSymbol(paidIntent.chain)}
+                  </span>{" "}
+                  sent to a separate recipient wallet on the test network. No real money moved.
                 </p>
                 <p className="eyebrow mt-4">Transaction</p>
                 {paidIntent.explorerUrl ? (
