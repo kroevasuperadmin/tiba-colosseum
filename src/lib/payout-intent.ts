@@ -2,7 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Agent, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getGnkUsdRate } from "@/lib/gonka-pricing";
-import { runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
+import { CANDIDATES, runGonka, fingerprintPrompt, fingerprintResponse, type GonkaMessage, type GonkaRequest, type GonkaResult } from "@/lib/gonka";
+import { modelAnsweredWith, sameMakerFallback } from "@/lib/channel-makers";
 import { recipientIdentityOk } from "@/lib/identity";
 import {
   artifactDecisionSchema,
@@ -224,12 +225,29 @@ export async function processPayoutIntent(
   const artifactResult = artifactRun.status === "fulfilled" ? artifactRun.value : unavailable("moonshotai/Kimi-K2.6");
   const payerResult = payerRun.status === "fulfilled" ? payerRun.value : unavailable("deepseek-ai/DeepSeek-V4-Flash-0731");
 
+  const payerTuple = tuple(payerResult);
+  const artifactTuple = tuple(artifactResult);
+  const channelPolicyWorkOrder = payerTuple
+    ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
+    : null;
+  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
+  // A fallback that left both checks on one maker is recorded. It does not change pay or refuse.
+  const sameMaker = sameMakerFallback({
+    requiredChannels,
+    artifactModel: artifactResult.model,
+    payerModel: payerResult.model,
+    artifactAnswered: artifactTuple !== null,
+    payerAnswered: payerTuple !== null,
+    artifactPrimary: CANDIDATES.artifact[0],
+    payerPrimary: CANDIDATES.payer_record[0]
+  });
+
   await prisma.adjudication.createMany({
     data: [
       {
         intentId: intent.id,
         channel: "artifact",
-        model: artifactResult.model,
+        model: modelAnsweredWith(artifactResult),
         requestId: artifactResult.requestId,
         fallback: artifactResult.fallback,
         promptSha: fingerprintPrompt(artifactMessages),
@@ -238,12 +256,13 @@ export async function processPayoutIntent(
         outputTokens: artifactResult.outputTokens,
         latencyMs: artifactResult.latencyMs,
         tupleJson: tupleJson(artifactResult),
-        ok: artifactResult.ok
+        ok: artifactResult.ok,
+        sameMaker
       },
       {
         intentId: intent.id,
         channel: "payer_record",
-        model: payerResult.model,
+        model: modelAnsweredWith(payerResult),
         requestId: payerResult.requestId,
         fallback: payerResult.fallback,
         promptSha: fingerprintPrompt(payerMessages),
@@ -252,17 +271,12 @@ export async function processPayoutIntent(
         outputTokens: payerResult.outputTokens,
         latencyMs: payerResult.latencyMs,
         tupleJson: tupleJson(payerResult),
-        ok: payerResult.ok
+        ok: payerResult.ok,
+        sameMaker
       }
     ]
   });
 
-  const payerTuple = tuple(payerResult);
-  const artifactTuple = tuple(artifactResult);
-  const channelPolicyWorkOrder = payerTuple
-    ? openWorkOrders.find((workOrder) => workOrder.ref === payerTuple.workOrderId)
-    : null;
-  const requiredChannels = channelPolicyWorkOrder ? requiredChannelsFrom(channelPolicyWorkOrder.requiredChannels) : "both";
   const reconciled = reconcile(requiredChannels, {
     artifact: artifactTuple ?? undefined,
     payer_record: payerTuple ?? undefined

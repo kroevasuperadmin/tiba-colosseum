@@ -9,6 +9,7 @@ import { decisionSentence, disagreementLine, explainDecision } from "@/app/conso
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Receipt - Tiba" };
@@ -117,6 +118,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   }
 
   const network = receiptNetwork(intent.chain);
+  const artifactRow = adjudicationsByChannel.get("artifact");
+  const payerRow = adjudicationsByChannel.get("payer_record");
+  const makerSentences = receiptMakerSentences({
+    artifactModel: artifactRow?.ok ? artifactRow.model : null,
+    payerModel: payerRow?.ok ? payerRow.model : null
+  });
+  const sameModelNote = receiptSameModelNote(Boolean(artifactRow?.sameMaker || payerRow?.sameMaker));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -165,6 +173,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
         <section className="card p-5">
           <h2 className="title">How this decision was made</h2>
+          {makerSentences ? <p className="mt-4 text-sm">{makerSentences}</p> : null}
+          {sameModelNote ? <p className="mt-2 text-sm">{sameModelNote}</p> : null}
           <div className="mt-4 max-w-full overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>

@@ -58,17 +58,22 @@ hope.
 
 1. An agent submits a payout intent: recipient, amount, an evidence artifact (e.g. a delivery note).
 2. Two channels each independently read a different source and produce a `{work_order_id, amount}` answer
-   through GonkaRouter: one reads the evidence artifact, the other reads the payer's own record. Both use
-   the identical model list, `openai/gpt-oss-120b` with `qwen/qwen3.8-27b` as fallback (`src/lib/gonka.ts`,
-   `CANDIDATES`). This is one model reading two different sources, not two different models forming two
-   opinions.
+   through Groq: one reads the evidence artifact, the other reads the payer's own record. The two checks
+   use two different makers (`src/lib/gonka.ts`, `CANDIDATES`). The artifact check asks OpenAI's model
+   first (`openai/gpt-oss-120b`) and falls back to Alibaba's model (`qwen/qwen3.8-27b`). The payer-record
+   check asks Alibaba's model first (`qwen/qwen3.8-27b`) and falls back to OpenAI's model
+   (`openai/gpt-oss-120b`). Which model actually answered is stored on the adjudication. If both checks
+   had to run and a fallback left both answered by the same maker, the payment still pays or refuses on
+   its own. That fact is stored on the adjudication, and the receipt says both checks used the same model
+   because the other was unavailable.
 3. How many channels run depends on the amount (`src/lib/reconcile.ts`, `requiredChannelsForAmount`,
    covered by its own test):
-   - Under $50: one channel, the payer's own record.
+   - Under $50: one channel, the payer's own record. A same-maker fallback does not change this, and the
+     receipt does not add the same-model note.
    - $50 to $250: both channels must agree.
    - Over $250: neither channel runs automatically — a person decides.
 4. Agreement pays. Disagreement, or a policy limit (kill switch, per-payment ceiling, daily cap, recipient
-   allowlist), refuses. No tie-breaker, no guess.
+   allowlist), refuses. No tie-breaker, no guess. A same-maker fallback does not change that.
 5. Every outcome, paid or refused, gets a public signed receipt (`/r/[token]`) naming which channels ran,
    what each one found, and which rule decided it. A channel that did not run says so, not "agreed."
 6. Live rail: Solana devnet, USDC. Built and tested, not yet merged or live: Tempo (an EVM-compatible
