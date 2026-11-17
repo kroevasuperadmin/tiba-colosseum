@@ -1,4 +1,5 @@
 import { channelTuple, type ChannelTuple } from "./adjudication-display.ts";
+import { receiptNetwork } from "./receipt-network.ts";
 
 export const GROWTH_LINE =
   "Pay your own contributors with Tiba. Every payment checked, every outcome on a receipt like this one.";
@@ -208,8 +209,9 @@ export function homepageRefusedCard(
 export function receiptShareLines(input: {
   decisionClass: string;
   amount: string;
+  chain: string | null;
   comparison: ReceiptComparison;
-}): { outcome: string; amount: string; network: "Solana test network"; mismatch: string | null } {
+}): { outcome: string; amount: string; network: string; mismatch: string | null } {
   const outcome =
     input.decisionClass === "PAID"
       ? "PAID"
@@ -221,7 +223,7 @@ export function receiptShareLines(input: {
   return {
     outcome,
     amount: input.amount,
-    network: "Solana test network",
+    network: receiptNetwork(input.chain),
     mismatch: input.decisionClass === "RED" ? input.comparison.mismatchedField : null
   };
 }

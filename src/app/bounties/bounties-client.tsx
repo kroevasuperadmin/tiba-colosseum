@@ -109,9 +109,8 @@ export function BountiesClient({ bounties }: BountiesClientProps) {
           <h1 className="display-l mt-2">Post a bounty, pay the claim that earns it</h1>
         </div>
         <p className="lede">
-          Anyone with the link can claim. Each claim goes through the same check as an invoice:
-          it pays on Solana devnet when the amount and the claimer agree with what you posted,
-          and refuses — with a receipt saying why — when they do not.
+          Open to anyone: every claim waits for you to approve it. With an allowlist: listed
+          addresses are paid automatically when the amount checks agree.
         </p>
       </header>
 

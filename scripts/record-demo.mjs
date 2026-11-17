@@ -172,8 +172,8 @@ async function main() {
     return import("@playwright/test");
   });
 
-  // NOTE: this wipes the live ledger. demo:reset AND the e2e run's seed() both deleteMany
-  // every table and recreate the demo data; the site ends with the fresh RED + PAID pair.
+  // NOTE: this empties every table. For a non-local database, ALLOW_DB_WIPE must equal the
+  // database host before demo:reset or the e2e run's seed() will proceed.
   // DEMO_TOUR_ONLY skips both: the ledger already has rows.
   if (tourOnly) {
     console.log("DEMO_TOUR_ONLY set: skipping demo:reset and e2e");
