@@ -1,17 +1,49 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DenialBanner } from "@/components/denial-banner";
 import { formatLatency, microsToUsdc } from "@/lib/money";
 import { prisma } from "@/lib/db";
 import { channelTuple, type ChannelTuple } from "@/lib/adjudication-display";
+import { GROWTH_LINE, growthHref, receiptComparisonFromStored, receiptShareLines } from "@/lib/receipt-comparison";
+import { BillRecordMismatch } from "@/components/bill-record-mismatch";
 import { SiteNav } from "@/components/site-nav";
 import { decisionSentence, disagreementLine, explainDecision } from "@/app/console/types";
 import { recipientIdentityOk } from "@/lib/identity";
 import { LiveRefresh } from "@/components/live-refresh";
 import { receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
+import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Receipt - Tiba" };
+
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const { token } = await params;
+  const intent = await prisma.payoutIntent.findUnique({
+    where: { publicToken: token },
+    include: { adjudications: true }
+  });
+  if (!intent) return { title: "Receipt - Tiba" };
+
+  const share = receiptShareLines({
+    decisionClass: intent.decisionClass,
+    amount: microsToUsdc(intent.amountMicros),
+    comparison: receiptComparisonFromStored({
+      artifact: intent.adjudications.find((row) => row.channel === "artifact") ?? null,
+      payerRecord: intent.adjudications.find((row) => row.channel === "payer_record") ?? null
+    })
+  });
+  const title = `${share.outcome} · ${share.amount}`;
+  const description = share.mismatch
+    ? `Solana test network. Mismatch: ${share.mismatch}.`
+    : "Solana test network.";
+
+  return {
+    title: "Receipt - Tiba",
+    description,
+    openGraph: { title, description },
+    twitter: { card: "summary_large_image", title, description }
+  };
+}
 
 function formatTime(date: Date | null): string {
   if (!date) return "time unknown";
@@ -43,6 +75,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
   if (!intent) notFound();
 
+  const bountyClaim = await prisma.bountyClaim.findUnique({
+    where: { payoutIntentId: intent.id },
+    include: { bounty: true }
+  });
+
   const adjudicationsByChannel = new Map(intent.adjudications.map((row) => [row.channel, row]));
   const paid = intent.decisionClass === "PAID";
 
@@ -50,6 +87,17 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   const channelATuple = channelTuple(adjudicationsByChannel.get("artifact")?.tupleJson);
   const channelBTuple = channelTuple(adjudicationsByChannel.get("payer_record")?.tupleJson);
   const disagreement = disagreementLine(intent.reasonCode, channelATuple, channelBTuple);
+  const refusedComparison =
+    intent.decisionClass === "RED"
+      ? receiptComparisonFromStored({
+          artifact: adjudicationsByChannel.get("artifact")
+            ? { tupleJson: adjudicationsByChannel.get("artifact")?.tupleJson }
+            : null,
+          payerRecord: adjudicationsByChannel.get("payer_record")
+            ? { tupleJson: adjudicationsByChannel.get("payer_record")?.tupleJson }
+            : null
+        })
+      : null;
 
   // Determine channel match status
   function getChannelMatchStatus(tupleA: ChannelTuple, tupleB: ChannelTuple): string {
@@ -117,6 +165,13 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   }
 
   const network = receiptNetwork(intent.chain);
+  const artifactRow = adjudicationsByChannel.get("artifact");
+  const payerRow = adjudicationsByChannel.get("payer_record");
+  const makerSentences = receiptMakerSentences({
+    artifactModel: artifactRow?.ok ? artifactRow.model : null,
+    payerModel: payerRow?.ok ? payerRow.model : null
+  });
+  const sameModelNote = receiptSameModelNote(Boolean(artifactRow?.sameMaker || payerRow?.sameMaker));
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -144,7 +199,20 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
           </div>
         </header>
 
+        {refusedComparison ? <BillRecordMismatch comparison={refusedComparison} /> : null}
+
         <DenialBanner decisionClass={intent.decisionClass} reasonCode={intent.reasonCode} />
+
+        {bountyClaim ? (
+          <section className="card p-5">
+            <p className="title text-muted">Bounty</p>
+            <p className="mt-2 text-xl font-semibold">{bountyClaim.bounty.title}</p>
+            <p className="mt-1 text-sm text-muted">
+              Asked: <span className="num">{microsToUsdc(bountyClaim.amountAskedMicros)}</span>
+            </p>
+            <p className="mt-1 text-sm text-muted">Claimed: {bountyClaim.summary}</p>
+          </section>
+        ) : null}
 
         <section className="grid gap-4 md:grid-cols-3">
           <Fact
@@ -165,6 +233,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
 
         <section className="card p-5">
           <h2 className="title">How this decision was made</h2>
+          {makerSentences ? <p className="mt-4 text-sm">{makerSentences}</p> : null}
+          {sameModelNote ? <p className="mt-2 text-sm">{sameModelNote}</p> : null}
           <div className="mt-4 max-w-full overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
@@ -285,6 +355,12 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
             )}
           </div>
         </section>
+
+        <p className="text-sm">
+          <Link className="link" href={growthHref(intent.publicToken)}>
+            {GROWTH_LINE}
+          </Link>
+        </p>
 
         <Link
           className="btn btn-ghost w-fit"

@@ -36,10 +36,13 @@ model Agent {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
   userId            String?  @map("user_id")
+  // Public receipt token from /start?ref=, when this workspace was created from a receipt. Null otherwise.
+  signupRef         String?  @map("signup_ref")
 
   intents           PayoutIntent[]
   recipients        Recipient[]
   telegramChats     TelegramChat[]
+  bounties          Bounty[]
 
   @@map("agents")
 }
@@ -173,6 +176,7 @@ model PayoutIntent {
   recipient        Recipient   @relation(fields: [recipientId], references: [id])
   adjudications    Adjudication[]
   artifact         Artifact?
+  bountyClaim      BountyClaim?
 
   @@index([agentId, createdAt])
   @@map("payout_intents")
@@ -192,6 +196,9 @@ model Adjudication {
   latencyMs    Int      @map("latency_ms")
   tupleJson    Json?    @map("tuple_json")
   ok           Boolean
+  // True when both checks had to run and a fallback left them answered by the same maker.
+  // The payment still pays or refuses on its own. The receipt says so.
+  sameMaker    Boolean  @default(false) @map("same_maker")
   createdAt    DateTime @default(now()) @map("created_at")
 
   intent       PayoutIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
@@ -224,4 +231,43 @@ model TelegramChat {
 
   @@index([agentId])
   @@map("telegram_chats")
+}
+
+// A program owner's posted reward. Each claim against it becomes its own Recipient + WorkOrder +
+// PayoutIntent through the existing check -- the bounty is the payer's record, the claim is the
+// bill. allowedClaimers empty means open to anyone; non-empty is an exact Solana-address allowlist.
+model Bounty {
+  id              String   @id @default(uuid())
+  agentId         String   @map("agent_id")
+  title           String
+  doneCriteria    String   @map("done_criteria")
+  amountMicros    BigInt   @map("amount_micros")
+  allowedClaimers String[] @default([]) @map("allowed_claimers")
+  shareCode       String   @unique @map("share_code")
+  status          String   @default("open")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  agent           Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  claims          BountyClaim[]
+
+  @@index([agentId, createdAt])
+  @@map("bounties")
+}
+
+model BountyClaim {
+  id                    String   @id @default(uuid())
+  bountyId              String   @map("bounty_id")
+  workLink              String   @map("work_link")
+  claimerSolanaAddress  String   @map("claimer_solana_address")
+  amountAskedMicros     BigInt   @map("amount_asked_micros")
+  summary               String
+  payoutIntentId        String?  @unique @map("payout_intent_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  bounty                Bounty        @relation(fields: [bountyId], references: [id], onDelete: Cascade)
+  payoutIntent          PayoutIntent? @relation(fields: [payoutIntentId], references: [id])
+
+  @@index([bountyId, createdAt])
+  @@map("bounty_claims")
 }

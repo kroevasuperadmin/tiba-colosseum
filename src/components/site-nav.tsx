@@ -84,6 +84,7 @@ function AppLinks({ current }: { current: string }) {
     { key: "verify", label: "Verify", href: "/verify" },
     { key: "ledger", label: "Activity", href: "/ledger" },
     { key: "work-orders", label: "Invoices", href: "/work-orders" },
+    { key: "bounties", label: "Bounties", href: "/bounties" },
     { key: "recipients", label: "Recipients", href: "/recipients" },
     { key: "policies", label: "Limits", href: "/policies" },
     { key: "developers", label: "Developers", href: "/developers" }
