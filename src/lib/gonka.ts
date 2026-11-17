@@ -190,6 +190,19 @@ export interface GonkaRequest {
  * updates `health`).
  */
 export async function runGonka(request: GonkaRequest): Promise<GonkaResult> {
+  // Check 2 reads the work orders already on this message. It does not open a
+  // database connection. A throw is stored as { error } on the result, which
+  // processPayoutIntent copies onto the adjudication. It is not dropped.
+  // The bill check below is unchanged.
+  if (request.channel === "payer_record") {
+    try {
+      const { readPayerRecordByRules } = await import("./payer-record-rules.ts");
+      return readPayerRecordByRules(request.messages);
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim() ? error.message : String(error);
+      return { ok: false, model: "rules", latencyMs: 0, content: JSON.stringify({ error: message }) };
+    }
+  }
   const apiKey = process.env.GROQ_API_KEY;
   const [primary, secondary] = CANDIDATES[request.channel];
   if (!apiKey) return { ok: false, model: primary, latencyMs: 0, errorCode: "INFERENCE_UNAVAILABLE" };

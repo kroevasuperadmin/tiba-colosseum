@@ -14,6 +14,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { receiptAmountLines } from "@/lib/asked-amount";
 import { coinSymbol, microsToCoin, receiptNetwork, receiptViewingKeyNote } from "@/lib/receipt-network";
 import { receiptMakerSentences, receiptSameModelNote } from "@/lib/channel-makers";
+import { PayerRecordCheckDetail, payerRecordNoAnswer } from "@/lib/payer-record-receipt";
 import { limitsStatus } from "@/lib/receipt-status";
 
 export const dynamic = "force-dynamic";
@@ -151,6 +152,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
   const network = receiptNetwork(intent.chain);
   const artifactRow = adjudicationsByChannel.get("artifact");
   const payerRow = adjudicationsByChannel.get("payer_record");
+  const payerNoAnswer = payerRecordNoAnswer(payerRow?.tupleJson);
   const makerSentences = receiptMakerSentences({
     artifactModel: artifactRow?.ok ? artifactRow.model : null,
     payerModel: payerRow?.ok ? payerRow.model : null
@@ -268,25 +270,16 @@ export default async function ReceiptPage({ params }: { params: Promise<{ token:
               </tr>
               <tr className="border-b border-line">
                 <td className="py-3 px-3">Check 2 — read your own records</td>
-                <td className="py-3 px-3">{getChannelMatchStatus(channelBTuple, channelATuple)}</td>
+                <td className="py-3 px-3">{payerNoAnswer ? "No answer" : getChannelMatchStatus(channelBTuple, channelATuple)}</td>
                 <td className="py-3 px-3">
-                  {adjudicationsByChannel.get("payer_record") ? (
-                    <div className="text-sm">
-                      <div className="break-all">Model used: {adjudicationsByChannel.get("payer_record")?.model}</div>
-                      {adjudicationsByChannel.get("payer_record")?.fallback ? (
-                        <div style={{ color: "var(--held)" }}>
-                          The reading service swapped in a different model for this reader:{" "}
-                          <span className="num break-all text-xs">{adjudicationsByChannel.get("payer_record")?.fallback}</span>
-                        </div>
-                      ) : null}
-                      <div>
-                        Reference (request ID):{" "}
-                        <span className="num break-all text-xs">
-                          {adjudicationsByChannel.get("payer_record")?.requestId ?? "missing"}
-                        </span>
-                      </div>
-                      <div>Took: <span className="num">{formatLatency(adjudicationsByChannel.get("payer_record")?.latencyMs)}</span></div>
-                    </div>
+                  {payerRow ? (
+                    <PayerRecordCheckDetail
+                      model={payerRow.model}
+                      fallback={payerRow.fallback}
+                      requestId={payerRow.requestId}
+                      latencyMs={payerRow.latencyMs}
+                      noAnswer={payerNoAnswer}
+                    />
                   ) : (
                     "This check was not run."
                   )}
